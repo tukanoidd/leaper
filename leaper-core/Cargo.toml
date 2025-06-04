@@ -1,0 +1,44 @@
+[package]
+name = "leaper-core"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+iced.workspace = true
+
+tokio = { workspace = true, features = ["fs", "io-util"] }
+
+directories.workspace = true
+
+chrono = { workspace = true, features = ["serde"] }
+
+smart-default.workspace = true
+
+serde = { workspace = true, features = ["derive"] }
+
+tracing.workspace = true
+
+thiserror.workspace = true
+miette.workspace = true
+
+dotenvy = "0.15.7"
+which = "7.0.3"
+applications = "0.3.1"
+nucleo = "0.5.0"
+
+image = { version = "0.25.6", features = ["serde"] }
+surrealdb = { version = "2.3.3", features = ["kv-surrealkv"] }
+
+bon = "3.6.3"
+paste = "1.0.15"
+
+serde_json = "1.0.140"
+toml = "0.8.22"
+ron = "0.10.1"
+csscolorparser = { version = "0.7.1", features = ["serde"] }
+serialimage = "4.1.1"
+uuid = "1.17.0"
