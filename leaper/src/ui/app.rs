@@ -218,7 +218,7 @@ impl Application for App {
                 }
             }
 
-            AppMsg::OpenFile(file) => {
+            AppMsg::OpenFile(_file) => {
                 // TODO
             }
 

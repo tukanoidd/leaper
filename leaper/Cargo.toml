@@ -10,20 +10,20 @@ homepage.workspace = true
 [dependencies]
 lcore = { path = "../leaper-core", package = "leaper-core" }
 
-iced = { workspace = true, features = ["image", "tokio", "advanced"] }
-
-tokio = { workspace = true, features = ["rt-multi-thread"] }
+iced = { workspace = true, features = ["tokio", "image"] }
 
 directories.workspace = true
 
 tracing.workspace = true
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.19", features = [
+  "ansi",
+  "env-filter",
+], default-features = false }
 
-miette = { workspace = true, features = ["fancy", "syntect-highlighter"] }
+miette = { workspace = true, features = ["fancy"] }
 thiserror.workspace = true
 
 clap = { version = "4.5.39", features = ["derive"] }
 
 iced_layershell = "0.13.6"
-iced_runtime = "0.13.2"
-itertools = "0.14.0"
+itertools = { version = "0.14.0", default-features = false }

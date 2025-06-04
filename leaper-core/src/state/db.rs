@@ -146,7 +146,7 @@ macro_rules! db_env {
     ($name:ident {$(
         $table:ident = $item:ty [$item_name:literal $(($only:ident))?]
     ),+ $(,)?}) => {
-        paste::paste! {
+        pastey::paste! {
             pub struct [< $name DB >];
 
             impl $crate::state::db::DBEnv for [< $name DB >] {
@@ -173,7 +173,7 @@ macro_rules! db_env {
         }
     };
     (@only $table:ident $item:ty) => {
-        paste::paste! {
+        pastey::paste! {
             impl $crate::state::db::DBTableOnlyItem<[< $table DBTable >]> for $item {}
         }
     }

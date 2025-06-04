@@ -3,7 +3,7 @@ use smart_default::SmartDefault;
 
 macro_rules! builtins {
     ($($name:ident $({$($tt:tt)*})?),+ $(,)?) => {
-        paste::paste! {
+        pastey::paste! {
             #[derive(Debug, Clone, SmartDefault, Serialize, Deserialize)]
             #[serde(default)]
             pub struct Builtins {

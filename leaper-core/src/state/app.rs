@@ -23,7 +23,7 @@ pub struct AppState {
 impl AppState {
     pub async fn new(project_dirs: ProjectDirs) -> AppStateResult<Self> {
         let Config {
-            builtins: Builtins { finder },
+            builtins: Builtins { finder: _ },
             terminal,
             theme,
         } = Config::open(&project_dirs).await?;
