@@ -13,7 +13,7 @@ use iced::{
 use iced_layershell::{Appearance, Application, to_layer_message};
 use itertools::Itertools;
 use lcore::{
-    modules::applications::{AppEntry, AppExe},
+    modules::applications::AppEntry,
     state::app::{AppState, AppStateResult, AppTheme},
 };
 
@@ -189,11 +189,24 @@ impl Application for App {
                     return AppTask::done(AppMsg::LaunchApp(entry.exe.clone()));
                 }
             }
-            AppMsg::LaunchApp(AppExe { command, args }) => {
-                let mut cmd = std::process::Command::new(&command);
+            AppMsg::LaunchApp(exe) => {
+                let exe_str = exe.to_string_lossy().to_string();
+                let Some(mut res) = shlex::split(&exe_str) else {
+                    tracing::error!("Empty command!");
+                    return iced::exit();
+                };
 
-                if let Some(args) = &args {
-                    cmd.args(args);
+                if res.is_empty() {
+                    tracing::error!("Empty command!");
+                    return iced::exit();
+                }
+
+                let command = res.remove(0);
+
+                let mut cmd = std::process::Command::new(command);
+
+                if !res.is_empty() {
+                    cmd.args(res);
                 }
 
                 match cmd.spawn() {
@@ -201,13 +214,7 @@ impl Application for App {
                         return iced::exit();
                     }
                     Err(err) => {
-                        tracing::error!(
-                            "Failed to launch the {command:?}{}! Error: {err}",
-                            match args {
-                                Some(args) => format!(" {}", args.join(" ")),
-                                None => "".into(),
-                            }
-                        );
+                        tracing::error!("Failed to launch the {exe:?}! Error: {err}",);
                     }
                 }
             }
@@ -361,7 +368,7 @@ pub enum AppMsg {
 
     Filter(String),
 
-    LaunchApp(AppExe),
+    LaunchApp(PathBuf),
     LaunchActiveApp,
 
     OpenFile(PathBuf),

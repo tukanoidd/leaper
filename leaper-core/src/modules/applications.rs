@@ -138,7 +138,7 @@ impl Default for Applications {
 pub struct AppEntry {
     pub icon: Option<PathBuf>,
     pub name: String,
-    pub exe: AppExe,
+    pub exe: PathBuf,
 }
 
 impl AppEntry {
@@ -146,33 +146,7 @@ impl AppEntry {
         Self {
             icon,
             name: name.into(),
-            exe: AppExe::new(exe),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AppExe {
-    pub command: PathBuf,
-    pub args: Option<Vec<String>>,
-}
-
-impl AppExe {
-    fn new(exe: PathBuf) -> Self {
-        let exe_str = exe.to_string_lossy().to_string();
-        let mut split = exe_str.split(" ");
-
-        let command = split.next().unwrap();
-
-        let args = split.collect::<Vec<_>>();
-        let args = match args.is_empty() {
-            true => None,
-            false => Some(args.into_iter().map(String::from).collect()),
-        };
-
-        Self {
-            command: command.into(),
-            args,
+            exe,
         }
     }
 }

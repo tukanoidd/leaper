@@ -3345,6 +3345,7 @@ dependencies = [
  "leaper-core",
  "miette 7.6.0",
  "pastey",
+ "shlex",
  "thiserror 2.0.12",
  "tracing",
  "tracing-subscriber",
