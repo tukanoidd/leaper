@@ -3336,6 +3336,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 name = "leaper"
 version = "0.1.0"
 dependencies = [
+ "bon",
  "clap",
  "directories",
  "iced",
@@ -3343,6 +3344,7 @@ dependencies = [
  "itertools 0.14.0",
  "leaper-core",
  "miette 7.6.0",
+ "pastey",
  "thiserror 2.0.12",
  "tracing",
  "tracing-subscriber",

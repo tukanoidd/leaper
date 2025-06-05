@@ -6,9 +6,9 @@ use std::{
 use directories::ProjectDirs;
 use iced::{
     Color, Length,
-    alignment::{Horizontal, Vertical},
+    alignment::Horizontal,
     keyboard::key,
-    widget::{button, center, column, horizontal_rule, image, row, scrollable, text, text_input},
+    widget::{column, horizontal_rule, scrollable, text_input},
 };
 use iced_layershell::{Appearance, Application, to_layer_message};
 use itertools::Itertools;
@@ -17,7 +17,13 @@ use lcore::{
     state::app::{AppState, AppStateResult, AppTheme},
 };
 
-use crate::cli::{Cli, LeaperMode};
+use crate::{
+    cli::{Cli, LeaperMode},
+    ui::util::{
+        SELECTOR_BUTTON_HEIGHT, error_container, filter_input, info_container, main_container,
+        selector_button,
+    },
+};
 
 pub type AppExecutor = iced::executor::Default;
 pub type AppTask = iced::Task<AppMsg>;
@@ -97,13 +103,7 @@ impl Application for App {
                                 });
 
                                 if let Some(active) = self.active_item {
-                                    return scrollable::scroll_to(
-                                        APP_LIST_ID.clone(),
-                                        scrollable::AbsoluteOffset {
-                                            x: 0.0,
-                                            y: active as f32 * 60.0 - 30.0,
-                                        },
-                                    );
+                                    return Self::scroll_to_active(active);
                                 }
                             }
                             key::Named::ArrowDown => {
@@ -116,13 +116,7 @@ impl Application for App {
                                 });
 
                                 if let Some(active) = self.active_item {
-                                    return scrollable::scroll_to(
-                                        APP_LIST_ID.clone(),
-                                        scrollable::AbsoluteOffset {
-                                            x: 0.0,
-                                            y: active as f32 * 60.0 - 30.0,
-                                        },
-                                    );
+                                    return Self::scroll_to_active(active);
                                 }
                             }
 
@@ -221,6 +215,9 @@ impl Application for App {
             AppMsg::OpenFile(_file) => {
                 // TODO
             }
+            AppMsg::OpenActiveFile => {
+                // TODO
+            }
 
             _ => {}
         }
@@ -233,72 +230,51 @@ impl Application for App {
             Some(_state) => match self.mode {
                 LeaperMode::Apps => match &self.filtered_entries() {
                     Some(entries) => match entries {
-                        Ok(entries) => center(
+                        Ok(entries) => main_container(
                             column![
-                                text_input("Search for an app...", &self.filter)
+                                filter_input()
                                     .id(APP_FILTER_ID.clone())
-                                    .size(35)
-                                    .padding(5)
-                                    .on_input(AppMsg::Filter)
-                                    .on_submit(AppMsg::LaunchActiveApp),
+                                    .placeholder("Search for an app...")
+                                    .value(&self.filter)
+                                    .on_submit(match self.mode {
+                                        LeaperMode::Apps => AppMsg::LaunchActiveApp,
+                                        LeaperMode::Finder => AppMsg::OpenActiveFile,
+                                    })
+                                    .call(),
                                 horizontal_rule(2),
                                 scrollable(
                                     column(entries.iter().enumerate().map(
                                         |(ind, AppEntry { icon, name, exe })| {
-                                            button({
-                                                let mut row = row![]
-                                                    .spacing(5)
-                                                    .padding(15)
-                                                    .align_y(Vertical::Center);
-
-                                                if let Some(icon_path) = icon {
-                                                    row = row.push(image(icon_path));
-                                                }
-
-                                                row = row.push(text(name));
-
-                                                center(row).width(Length::Fill).height(Length::Fill)
-                                            })
-                                            .width(Length::Fill)
-                                            .height(Length::Fixed(60.0))
-                                            .style(move |theme, mut status| {
-                                                if let Some(active) = self.active_item {
-                                                    status = match active == ind {
-                                                        true => button::Status::Hovered,
-                                                        false => button::Status::Active,
-                                                    }
-                                                }
-
-                                                button::primary(theme, status)
-                                            })
-                                            .on_press(AppMsg::LaunchApp(exe.clone()))
-                                            .into()
+                                            selector_button()
+                                                .ind(ind)
+                                                .name(name)
+                                                .active_ind(&self.active_item)
+                                                .icon(icon)
+                                                .on_press(AppMsg::LaunchApp(exe.clone()))
+                                                .call()
                                         }
                                     ))
                                     .width(Length::Fill)
                                 )
                                 .id(APP_LIST_ID.clone())
+                                .spacing(5)
                                 .width(Length::Fill)
-                                .height(Length::Fill)
                             ]
-                            .width(Length::Fixed(800.0))
                             .height(Length::Fill)
                             .padding(100)
                             .align_x(Horizontal::Center)
                             .spacing(10),
-                        )
-                        .into(),
-                        Err(err) => Self::main_container_centered(
-                            text(format!("Encountered an error getting app entries: {err}"))
-                                .style(text::danger)
-                                .size(30),
                         ),
+
+                        Err(err) => error_container()
+                            .error(format!("Encountered an error getting app entries: {err}"))
+                            .call(),
                     },
-                    None => Self::main_container_centered(text("Loading entries...").size(30)),
+                    None => info_container().info("Loading entries...").call(),
                 },
                 LeaperMode::Finder => todo!(),
             },
-            None => Self::main_container_centered(text("Loading state...").size(30)),
+            None => info_container().info("Loading state...").call(),
         }
     }
 
@@ -322,10 +298,6 @@ impl Application for App {
 }
 
 impl App {
-    fn main_container_centered<'a>(el: impl Into<AppElement<'a>>) -> AppElement<'a> {
-        center(el).width(400).height(200).into()
-    }
-
     fn filtered_entries(&self) -> Option<AppStateResult<Vec<&AppEntry>>> {
         let trimmed_filter = self.filter.trim();
 
@@ -356,6 +328,19 @@ impl App {
             })
         })
     }
+
+    fn scroll_to_active(active: usize) -> iced::Task<AppMsg> {
+        scrollable::scroll_to(
+            APP_LIST_ID.clone(),
+            scrollable::AbsoluteOffset {
+                x: 0.0,
+                y: match active {
+                    0 => 0.0,
+                    _ => (active as f32 * SELECTOR_BUTTON_HEIGHT) + 5.0,
+                },
+            },
+        )
+    }
 }
 
 pub struct AppFlags {
@@ -380,4 +365,5 @@ pub enum AppMsg {
     LaunchActiveApp,
 
     OpenFile(PathBuf),
+    OpenActiveFile,
 }

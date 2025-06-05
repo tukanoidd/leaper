@@ -14,6 +14,9 @@ iced = { workspace = true, features = ["tokio", "image"] }
 
 directories.workspace = true
 
+bon.workspace = true
+pastey.workspace = true
+
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.19", features = [
   "ansi",
