@@ -83,6 +83,7 @@ impl Applications {
                         },
                     )
                     .unique_by(|e| e.name.clone())
+                    .sorted_by_key(|e| e.name.clone())
                     .collect::<Vec<_>>();
                 db.update_table::<CacheDBTable>(apps.clone()).await?;
 
