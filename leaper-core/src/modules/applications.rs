@@ -6,6 +6,7 @@ use std::{
 
 use applications::{AppInfo, AppInfoContext};
 use iced::futures::{FutureExt, future::BoxFuture, lock::Mutex};
+use itertools::Itertools;
 use miette::Diagnostic;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -81,6 +82,7 @@ impl Applications {
                                 .flatten()
                         },
                     )
+                    .unique_by(|e| e.name.clone())
                     .collect::<Vec<_>>();
                 db.update_table::<CacheDBTable>(apps.clone()).await?;
 
@@ -121,9 +123,11 @@ impl Applications {
             }
         }
 
+        let needle_lower = needle.as_ref().to_lowercase();
+
         matcher.unwrap().fuzzy_match(
             nucleo::Utf32Str::new(haystack.as_ref(), &mut haystack_buf),
-            nucleo::Utf32Str::new(needle.as_ref(), &mut needle_buf),
+            nucleo::Utf32Str::new(&needle_lower, &mut needle_buf),
         )
     }
 }

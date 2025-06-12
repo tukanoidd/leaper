@@ -10,7 +10,7 @@ directories = "6.0.0"
 tokio = "1.45.1"
 chrono = { version = "0.4.41", default-features = false }
 
-bon = { version = "3.6.3", default-features = false }
+bon = { version = "3.6.4", default-features = false }
 smart-default = "0.7.1"
 pastey = "0.1.0"
 

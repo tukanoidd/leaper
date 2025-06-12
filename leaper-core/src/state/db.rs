@@ -3,7 +3,7 @@ use std::sync::Arc;
 use directories::ProjectDirs;
 use miette::Diagnostic;
 use serde::{Deserialize, Serialize};
-use surrealdb::{Surreal, Uuid, engine::local::Db};
+use surrealdb::{RecordId, RecordIdKey, Surreal, Uuid, engine::local::Db};
 use thiserror::Error;
 use uuid::Timestamp;
 
@@ -212,7 +212,7 @@ pub struct DBRecord<T>
 where
     T: DBTable,
 {
-    id: Uuid,
+    id: RecordId,
     #[serde(flatten)]
     data: T::Item,
 }
@@ -221,8 +221,14 @@ impl<T> DBRecord<T>
 where
     T: DBTable,
 {
+    /// Note: only Uuid is used when creating new items, so should be fine
+    pub fn uuid(&self) -> Uuid {
+        <Uuid as TryFrom<RecordIdKey>>::try_from(self.id.key().clone()).unwrap()
+    }
+
+    /// Note: only timestamped Uuid is used when creating new items, so should be fine
     pub fn timestamp(&self) -> Timestamp {
-        self.id.get_timestamp().unwrap()
+        self.uuid().get_timestamp().unwrap()
     }
 }
 

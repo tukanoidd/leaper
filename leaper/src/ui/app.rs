@@ -169,10 +169,22 @@ impl Application for App {
             AppMsg::AppList(res) => {
                 self.app_entries = Some(res);
 
-                tracing::debug!("{:#?}", self.app_entries);
+                tracing::debug!(
+                    "Apps found: {}",
+                    self.app_entries
+                        .as_ref()
+                        .and_then(|x| x.as_ref().ok())
+                        .map(|x| x.len())
+                        .unwrap_or_default()
+                );
 
-                if self.app_entries.as_ref().unwrap().is_ok() {
-                    return text_input::focus(APP_FILTER_ID.clone());
+                match &self.app_entries.as_ref().unwrap() {
+                    Ok(_) => {
+                        return text_input::focus(APP_FILTER_ID.clone());
+                    }
+                    Err(err) => {
+                        tracing::error!("Failed to get app list: {err}");
+                    }
                 }
             }
 

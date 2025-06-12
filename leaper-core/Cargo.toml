@@ -35,9 +35,10 @@ surrealdb = { version = "2.3.3", features = [
 ], default-features = false }
 
 serde_json = "1.0.140"
-toml = "0.8.22"
+toml = "0.8.23"
 ron = "0.10.1"
-csscolorparser = { version = "0.7.1", features = [
+csscolorparser = { version = "0.7.2", features = [
   "serde",
 ], default-features = false }
 uuid = { version = "1.17.0", default-features = false }
+itertools = "0.14.0"
