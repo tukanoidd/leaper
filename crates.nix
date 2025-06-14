@@ -14,7 +14,11 @@
             libxkbcommon
           ];
         };
-        "leaper-core" = {};
+
+        leaper-macros = {};
+
+        leaper-apps = {};
+        leaper-db = {};
       };
     };
   };

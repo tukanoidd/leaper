@@ -7,15 +7,23 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 
-[dependencies]
-lcore = { path = "../leaper-core", package = "leaper-core" }
+[features]
+default = []
+profile = ["tracing-tracy"]
 
-iced = { workspace = true, features = ["tokio", "image"] }
+[dependencies]
+leaper-db.path = "../leaper-db"
+leaper-apps.path = "../leaper-apps"
+macros = { path = "../leaper-macros", package = "leaper-macros" }
+
+iced = { workspace = true, features = ["tokio", "image", "advanced"] }
+tokio.workspace = true
 
 directories.workspace = true
 
 bon.workspace = true
 pastey.workspace = true
+itertools.workspace = true
 
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.19", features = [
@@ -29,5 +37,7 @@ thiserror.workspace = true
 clap = { version = "4.5.40", features = ["derive"] }
 
 iced_layershell = "0.13.7"
-itertools = { version = "0.14.0", default-features = false }
-shlex = "1.3.0"
+
+# Profiling
+tracing-tracy = { version = "0.11.4", optional = true }
+nucleo = "0.5.0"

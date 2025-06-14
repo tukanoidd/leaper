@@ -42,6 +42,8 @@
               cargo-audit
               cargo-bloat
               cargo-features-manager
+
+              tracy
             ]);
         });
 

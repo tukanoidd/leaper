@@ -1,0 +1,22 @@
+[package]
+name = "leaper-db"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+macros = { path = "../leaper-macros", package = "leaper-macros" }
+surrealdb = { workspace = true, features = ["kv-surrealkv"] }
+serde.workspace = true
+
+tracing.workspace = true
+
+thiserror.workspace = true
+miette.workspace = true
+
+uuid = "1.17.0"
+
+derive_more = { version = "2.0.1", features = ["deref", "deref_mut"] }
