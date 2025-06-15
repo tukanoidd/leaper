@@ -39,7 +39,7 @@ impl Application for App {
     type Flags = AppFlags;
 
     fn new(AppFlags { project_dirs }: Self::Flags) -> (Self, iced::Task<Self::Message>) {
-        let db_path = project_dirs.config_local_dir().join("db");
+        let db_path = project_dirs.data_local_dir().join("db");
 
         let res = Self {
             db: None,
