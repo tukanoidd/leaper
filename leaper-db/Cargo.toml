@@ -13,7 +13,9 @@ profile = []
 
 [dependencies]
 macros = { path = "../leaper-macros", package = "leaper-macros" }
-surrealdb = { workspace = true, features = ["kv-surrealkv"] }
+surrealdb = { version = "2.3.3", default-features = false, features = [
+  "kv-surrealkv",
+] }
 serde.workspace = true
 
 tracing.workspace = true

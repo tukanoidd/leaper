@@ -6,7 +6,6 @@ resolver = "3"
 iced = "0.13.1"
 
 tokio = "1.45.1"
-surrealdb = "2.3.3"
 
 directories = "6.0.0"
 
