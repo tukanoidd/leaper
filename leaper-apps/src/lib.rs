@@ -35,6 +35,7 @@ pub async fn search_apps(
         .flatten()
         .chain(["/usr/share".into()])
         .unique()
+        .sorted()
         .map(SearchPath::from)
         .collect_vec();
 
@@ -72,10 +73,12 @@ pub async fn search_apps(
         .into_iter()
         .collect::<AppsResult<Vec<_>>>()?
         .into_iter()
-        .flatten()
-        .flatten()
+        .flat_map(|x| {
+            x.into_iter()
+                .flatten()
+                .sorted_by_key(|i| (i.path.clone(), i.dims))
+        })
         .map(DBTableEntry::from)
-        .sorted_by_key(|e| (e.path.clone(), e.dims))
         .collect_vec();
 
     db.set_table(icons.clone()).await?;
@@ -117,9 +120,9 @@ pub async fn search_apps(
         .into_iter()
         .collect::<AppsResult<Vec<_>>>()?
         .into_iter()
-        .flatten()
-        .flatten()
-        .unique_by(|a| a.name.clone())
+        .flat_map(|x| x.into_iter().flatten().unique_by(|x| x.name.clone()))
+        .unique_by(|x| x.name.clone())
+        .sorted_by_key(|x| x.name.clone())
         .map(DBTableEntry::from)
         .collect_vec();
 
@@ -216,7 +219,7 @@ impl AppEntry {
 }
 
 #[db_entry]
-#[db(db_name = "apps", table_name = "icons")]
+#[db(db_name = "apps", table_name = "icons", derives(Hash, PartialEq, Eq))]
 pub struct AppIcon {
     pub name: String,
     pub path: PathBuf,
@@ -235,12 +238,17 @@ impl AppIcon {
         let dims = path.components().rev().find_map(|comp| {
             let comp_str = comp.as_os_str().to_string_lossy().to_string();
             let dims = AppIconDims::parse(&comp_str).inspect_err(|err| {
+                #[cfg(not(feature = "profile"))]
+                let _err = err;
+
+                #[cfg(feature = "profile")]
                 tracing::trace!("[ERR] {err}");
             });
 
             dims.ok().map(|(_, dims)| dims)
         });
 
+        #[cfg(feature = "profile")]
         if dims.is_none() {
             tracing::trace!("[WARN] Couldn't identify image dimensions!");
         }
@@ -253,7 +261,7 @@ impl AppIcon {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AppIconDims {
     pub width: usize,
     pub height: usize,

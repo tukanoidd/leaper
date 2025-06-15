@@ -7,6 +7,10 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 
+[features]
+default = []
+profile = []
+
 [dependencies]
 macros = { path = "../leaper-macros", package = "leaper-macros" }
 surrealdb = { workspace = true, features = ["kv-surrealkv"] }

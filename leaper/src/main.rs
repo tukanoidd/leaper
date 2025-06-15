@@ -72,7 +72,7 @@ fn init_tracing(trace: bool, debug: bool) -> LeaperResult<()> {
         .then_some("trace")
         .or_else(|| (cfg!(debug_assertions) || debug).then_some("debug"))
         .unwrap_or("info");
-    let directives = ["leaper", "leaper-apps", "leaper-db"]
+    let directives = ["leaper", "leaper_apps", "leaper_db"]
         .map(|target| format!("{target}={level}"))
         .join(",");
 
@@ -80,7 +80,7 @@ fn init_tracing(trace: bool, debug: bool) -> LeaperResult<()> {
         .with(
             tracing_subscriber::fmt::layer()
                 .pretty()
-                .with_span_events(FmtSpan::ENTER | FmtSpan::EXIT),
+                .with_span_events(FmtSpan::CLOSE),
         )
         .with(tracing_subscriber::EnvFilter::new(directives));
 

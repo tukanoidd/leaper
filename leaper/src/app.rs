@@ -8,11 +8,13 @@ use iced::{
     keyboard::{self, Key, key},
     widget::{button, center, column, horizontal_rule, image, row, scrollable, text, text_input},
 };
+use iced_aw::Spinner;
 use iced_layershell::Application;
 use itertools::Itertools;
 use leaper_apps::{AppEntry, AppIcon, AppsResult, search_apps};
 use leaper_db::{DB, DBResult, DBTableEntry, TDBEntryId};
 use tokio::task::JoinSet;
+use tracing::Instrument;
 
 pub type AppTheme = iced::Theme;
 pub type AppRenderer = iced::Renderer;
@@ -67,48 +69,42 @@ impl Application for App {
                 Ok(db) => {
                     self.db = Some(db.clone());
 
-                    return AppTask::batch([
+                    return AppTask::perform(
                         {
-                            let db = db.clone();
+                            let span = tracing::trace_span!("get_cached_list");
 
-                            AppTask::perform(
-                                async move {
-                                    let db = db.clone();
-                                    let apps = db.get_table::<AppEntry>().await?;
+                            async move {
+                                let apps = db.get_table::<AppEntry>().await?;
 
-                                    let app_icons = apps
-                                        .into_iter()
-                                        .fold(JoinSet::new(), |mut join_set, app| {
-                                            let db = db.clone();
-                                            let icon = app.icon.clone();
+                                let app_icons = apps
+                                    .into_iter()
+                                    .fold(JoinSet::new(), |mut join_set, app| {
+                                        let db = db.clone();
+                                        let icon = app.icon.clone();
 
-                                            join_set.spawn(async move {
-                                                match icon {
-                                                    Some(icon) => DBResult::Ok((
-                                                        app,
-                                                        Some(
-                                                            db.entry::<AppIcon>(icon.uuid())
-                                                                .await?,
-                                                        ),
-                                                    )),
-                                                    None => Ok((app, None)),
-                                                }
-                                            });
+                                        join_set.spawn(async move {
+                                            match icon {
+                                                Some(icon) => DBResult::Ok((
+                                                    app,
+                                                    Some(db.entry::<AppIcon>(icon.uuid()).await?),
+                                                )),
+                                                None => Ok((app, None)),
+                                            }
+                                        });
 
-                                            join_set
-                                        })
-                                        .join_all()
-                                        .await
-                                        .into_iter()
-                                        .collect::<DBResult<Vec<_>>>()?;
+                                        join_set
+                                    })
+                                    .join_all()
+                                    .await
+                                    .into_iter()
+                                    .collect::<DBResult<Vec<_>>>()?;
 
-                                    Ok(app_icons)
-                                },
-                                AppMsg::InitApps,
-                            )
+                                Ok(app_icons)
+                            }
+                            .instrument(span)
                         },
-                        AppTask::perform(search_apps(db), AppMsg::LoadApps),
-                    ]);
+                        AppMsg::InitApps,
+                    );
                 }
                 Err(err) => {
                     tracing::error!("Failed to initialize the database: {err}");
@@ -118,6 +114,11 @@ impl Application for App {
             AppMsg::InitApps(apps) => match apps {
                 Ok(apps) => {
                     self.apps = apps;
+
+                    return AppTask::perform(
+                        search_apps(self.db.clone().unwrap()),
+                        AppMsg::LoadApps,
+                    );
                 }
                 Err(err) => {
                     tracing::error!("Failed to initialize app list from cache: {err}");
@@ -138,7 +139,7 @@ impl Application for App {
             AppMsg::SearchInput(new_search) => {
                 self.search = new_search;
 
-                self.filtered = match self.search.trim() {
+                self.filtered = match self.search.as_str() {
                     "" => {
                         self.selected = match self.apps.len() {
                             0 => 0,
@@ -176,7 +177,7 @@ impl Application for App {
                 false => return AppTask::done(AppMsg::RunApp(self.selected)),
             },
             AppMsg::RunApp(ind) => match {
-                match self.filtered.is_empty() {
+                match self.search.is_empty() {
                     true => &self.apps,
                     false => &self.filtered,
                 }
@@ -300,7 +301,7 @@ impl App {
         center(
             text_input("Search for an app...", &self.search)
                 .id(text_input::Id::new(Self::SEARCH_ID))
-                .on_input(AppMsg::SearchInput)
+                .on_input_maybe((!self.apps.is_empty()).then_some(AppMsg::SearchInput))
                 .on_submit(AppMsg::RunSelectedApp)
                 .size(25)
                 .padding(10),
@@ -312,24 +313,45 @@ impl App {
     }
 
     fn list(&self) -> AppElement<'_> {
-        scrollable(
-            column(
-                {
-                    match self.filtered.is_empty() {
-                        true => &self.apps,
-                        false => &self.filtered,
-                    }
-                }
-                .iter()
-                .enumerate()
-                .map(|(ind, (app, icon))| Self::app_entry(app, icon, ind, self.selected)),
+        let (items, filtered) = match self.search.is_empty() {
+            true => (&self.apps, false),
+            false => (&self.filtered, true),
+        };
+
+        let scrllbl = || {
+            scrollable(
+                column(
+                    items
+                        .iter()
+                        .enumerate()
+                        .map(|(ind, (app, icon))| Self::app_entry(app, icon, ind, self.selected)),
+                )
+                .align_x(Horizontal::Center),
             )
-            .align_x(Horizontal::Center),
-        )
-        .id(scrollable::Id::new(Self::LIST_ID))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+            .id(scrollable::Id::new(Self::LIST_ID))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+        };
+
+        match filtered {
+            true => match items.is_empty() {
+                true => center(text("No matches found!").size(25)).into(),
+                false => scrllbl(),
+            },
+            false => match items.is_empty() {
+                true => center(
+                    row![
+                        Spinner::new().width(30).height(30),
+                        text("Loading...").size(20)
+                    ]
+                    .align_y(Vertical::Center)
+                    .spacing(10),
+                )
+                .into(),
+                false => scrllbl(),
+            },
+        }
     }
 
     const APP_ENTRY_HEIGHT: f32 = 50.0;

@@ -29,7 +29,7 @@ impl DB {
         Ok(Self { db })
     }
 
-    #[tracing::instrument(skip(self), level = "trace")]
+    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
     async fn use_db<T>(&self) -> DBResult<()>
     where
         T: DBTable,
@@ -38,7 +38,7 @@ impl DB {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self), level = "trace")]
+    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
     pub async fn get_table<E>(&self) -> DBResult<Vec<DBTableEntry<E>>>
     where
         E: TDBTableEntry,
@@ -56,11 +56,11 @@ impl DB {
         Ok(self.db.select(E::Table::NAME).live().await?)
     }
 
-    #[tracing::instrument(skip(self), level = "trace")]
+    #[tracing::instrument(skip(self, table), level = "trace")]
     pub async fn set_table<E, I, IE>(&self, table: I) -> DBResult<Vec<DBTableEntry<E>>>
     where
         E: TDBTableEntry + 'static,
-        I: IntoIterator<Item = IE> + Debug,
+        I: IntoIterator<Item = IE>,
         IE: Into<DBTableEntry<E>>,
     {
         self.use_db::<E::Table>().await?;

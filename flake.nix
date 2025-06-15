@@ -10,6 +10,11 @@
       inputs.nixpkgs-lib.follows = "nixpkgs";
     };
     home-manager.url = "github:nix-community/home-manager";
+
+    tracy = {
+      url = "github:wolfpld/tracy";
+      flake = false;
+    };
   };
 
   outputs = inputs @ {

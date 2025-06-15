@@ -1,6 +1,9 @@
+use std::ops::Deref;
+
 use darling::{
     FromDeriveInput, FromField, FromVariant,
     ast::{Data, Fields, Style},
+    util::PathList,
 };
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -9,12 +12,12 @@ use syn::{Attribute, Ident, LitStr, Type, Visibility};
 use crate::util::DeriveInputUtil;
 
 #[derive(FromDeriveInput)]
-#[darling(supports(any), forward_attrs, attributes(db))]
+#[darling(supports(any), attributes(db))]
 pub struct DBEntry {
     vis: Visibility,
     ident: Ident,
     data: Data<DBEntryVariant, DBEntryField>,
-    attrs: Vec<Attribute>,
+    derives: Option<PathList>,
     db_name: LitStr,
     table_name: LitStr,
 }
@@ -25,13 +28,19 @@ impl DeriveInputUtil for DBEntry {
             vis,
             ident,
             data,
-            attrs,
+            derives,
             ..
         } = &self;
 
         let table = self.gen_table();
 
-        let derives = quote!(#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]);
+        let derives = derives.as_ref().map(|d| {
+            let d = d.deref().iter();
+            quote!(, #(#d),*)
+        });
+        let derives =
+            quote!(#[derive(Debug, Clone, serde::Serialize, serde::Deserialize #derives)]);
+
         let entry = self.gen_entry();
 
         match data {
@@ -42,7 +51,6 @@ impl DeriveInputUtil for DBEntry {
                     #table
 
                     #derives
-                    #(#attrs)*
                     #vis enum #ident {
                         #(#vars),*
                     }
