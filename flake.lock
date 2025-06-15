@@ -235,8 +235,7 @@
         "home-manager": "home-manager",
         "nci": "nci",
         "nixpkgs": "nixpkgs_2",
-        "parts": "parts_2",
-        "tracy": "tracy"
+        "parts": "parts_2"
       }
     },
     "rust-overlay": {
@@ -280,22 +279,6 @@
       "original": {
         "owner": "thomashoneyman",
         "repo": "slimlock",
-        "type": "github"
-      }
-    },
-    "tracy": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1749895663,
-        "narHash": "sha256-JiheEYzgcPIufjXe5BkJtufG0JrcGrjuZNHpUiGuhX8=",
-        "owner": "wolfpld",
-        "repo": "tracy",
-        "rev": "b69813f077f05a3fbf2b1904ef210965fea01cf4",
-        "type": "github"
-      },
-      "original": {
-        "owner": "wolfpld",
-        "repo": "tracy",
         "type": "github"
       }
     },
