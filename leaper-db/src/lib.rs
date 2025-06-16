@@ -189,6 +189,14 @@ where
     pub fn id(&self) -> DBEntryId {
         self.id.clone()
     }
+
+    pub fn map<V>(self, f: impl FnOnce(D) -> V) -> DBTableEntry<V>
+    where
+        V: TDBTableEntry,
+    {
+        let Self { id, val } = self;
+        DBTableEntry { id, val: f(val) }
+    }
 }
 
 impl<D> From<D> for DBTableEntry<D>

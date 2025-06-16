@@ -11,9 +11,8 @@ use iced::{
 use iced_aw::Spinner;
 use iced_layershell::Application;
 use itertools::Itertools;
-use leaper_apps::{AppEntry, AppIcon, AppsResult, search_apps};
-use leaper_db::{DB, DBResult, DBTableEntry, TDBEntryId};
-use tokio::task::JoinSet;
+use leaper_apps::{AppEntryWithIcon, AppsResult, search_apps};
+use leaper_db::{DB, DBResult, DBTableEntry};
 use tracing::Instrument;
 
 pub type AppTheme = iced::Theme;
@@ -72,36 +71,7 @@ impl Application for App {
                     return AppTask::perform(
                         {
                             let span = tracing::trace_span!("get_cached_list");
-
-                            async move {
-                                let apps = db.get_table::<AppEntry>().await?;
-
-                                let app_icons = apps
-                                    .into_iter()
-                                    .fold(JoinSet::new(), |mut join_set, app| {
-                                        let db = db.clone();
-                                        let icon = app.icon.clone();
-
-                                        join_set.spawn(async move {
-                                            match icon {
-                                                Some(icon) => DBResult::Ok((
-                                                    app,
-                                                    Some(db.entry::<AppIcon>(icon.uuid()).await?),
-                                                )),
-                                                None => Ok((app, None)),
-                                            }
-                                        });
-
-                                        join_set
-                                    })
-                                    .join_all()
-                                    .await
-                                    .into_iter()
-                                    .collect::<DBResult<Vec<_>>>()?;
-
-                                Ok(app_icons)
-                            }
-                            .instrument(span)
+                            async move { db.get_table::<AppEntryWithIcon>().await }.instrument(span)
                         },
                         AppMsg::InitApps,
                     );
@@ -156,17 +126,17 @@ impl Application for App {
 
                         self.apps
                             .iter()
-                            .filter_map(|(app, icon)| {
+                            .filter_map(|app| {
                                 self.matcher
                                     .fuzzy_match(
                                         nucleo::Utf32Str::new(&app.name, &mut vec![]),
                                         nucleo::Utf32Str::new(&search.to_lowercase(), &mut vec![]),
                                     )
-                                    .map(|score| (score, app, icon))
+                                    .map(|score| (score, app))
                             })
-                            .sorted_by_key(|(score, _, _)| *score)
+                            .sorted_by_key(|(score, _)| *score)
                             .rev()
-                            .map(|(_, app, icon)| (app.clone(), icon.clone()))
+                            .map(|(_, app)| app.clone())
                             .collect()
                     }
                 };
@@ -184,7 +154,7 @@ impl Application for App {
             }
             .get(ind)
             {
-                Some((app, _)) => {
+                Some(app) => {
                     let cmd = &app.exec[0];
                     let args = match app.exec.len() {
                         1 => None,
@@ -324,7 +294,7 @@ impl App {
                     items
                         .iter()
                         .enumerate()
-                        .map(|(ind, (app, icon))| Self::app_entry(app, icon, ind, self.selected)),
+                        .map(|(ind, app)| Self::app_entry(app, ind, self.selected)),
                 )
                 .align_x(Horizontal::Center),
             )
@@ -361,12 +331,11 @@ impl App {
     const APP_ENTRY_TEXT_HEIGHT: f32 = Self::APP_ENTRY_IMAGE_SIZE * 0.5;
 
     fn app_entry<'a>(
-        app: &'a DBTableEntry<AppEntry>,
-        icon: &'a Option<DBTableEntry<AppIcon>>,
+        app: &'a DBTableEntry<AppEntryWithIcon>,
         ind: usize,
         selected: usize,
     ) -> AppElement<'a> {
-        let r = match icon {
+        let r = match &app.icon {
             Some(icon) => row![
                 image(&icon.path)
                     .width(Self::APP_ENTRY_IMAGE_SIZE)
@@ -403,7 +372,7 @@ pub struct AppFlags {
     pub project_dirs: ProjectDirs,
 }
 
-type AppsIcons = Vec<(DBTableEntry<AppEntry>, Option<DBTableEntry<AppIcon>>)>;
+type AppsIcons = Vec<DBTableEntry<AppEntryWithIcon>>;
 
 type InitAppsIconsResult = DBResult<AppsIcons>;
 type LoadAppsIconsResult = AppsResult<AppsIcons>;

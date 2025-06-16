@@ -7,15 +7,16 @@ use darling::{
 };
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Attribute, Ident, LitStr, Type, Visibility};
+use syn::{Attribute, Generics, Ident, LitStr, Type, Visibility};
 
 use crate::util::DeriveInputUtil;
 
 #[derive(FromDeriveInput)]
-#[darling(supports(any), attributes(db))]
+#[darling(supports(any), forward_attrs, attributes(db))]
 pub struct DBEntry {
     vis: Visibility,
     ident: Ident,
+    generics: Generics,
     data: Data<DBEntryVariant, DBEntryField>,
     derives: Option<PathList>,
     db_name: LitStr,
@@ -27,6 +28,7 @@ impl DeriveInputUtil for DBEntry {
         let Self {
             vis,
             ident,
+            generics,
             data,
             derives,
             ..
@@ -42,6 +44,7 @@ impl DeriveInputUtil for DBEntry {
             quote!(#[derive(Debug, Clone, serde::Serialize, serde::Deserialize #derives)]);
 
         let entry = self.gen_entry();
+        let (_impl_gen, ty_gen, where_gen) = generics.split_for_impl();
 
         match data {
             Data::Enum(items) => {
@@ -51,7 +54,7 @@ impl DeriveInputUtil for DBEntry {
                     #table
 
                     #derives
-                    #vis enum #ident {
+                    #vis enum #ident #ty_gen #where_gen {
                         #(#vars),*
                     }
 
@@ -62,12 +65,12 @@ impl DeriveInputUtil for DBEntry {
                 let fields = fields.iter().map(DBEntryField::gen_field);
 
                 quote! {
+                    #table
+
                     #derives
-                    #vis struct #ident {
+                    #vis struct #ident #ty_gen #where_gen {
                         #(#fields),*
                     }
-
-                    #table
 
                     #entry
                 }
@@ -102,12 +105,15 @@ impl DBEntry {
     }
 
     fn gen_entry(&self) -> TokenStream {
-        let Self { ident, .. } = self;
+        let Self {
+            ident, generics, ..
+        } = self;
+        let (impl_gen, ty_gen, where_gen) = generics.split_for_impl();
 
         let table = self.table_name();
 
         quote! {
-            impl leaper_db::TDBTableEntry for #ident {
+            impl #impl_gen leaper_db::TDBTableEntry for #ident #ty_gen #where_gen {
                 type Table = #table;
             }
         }

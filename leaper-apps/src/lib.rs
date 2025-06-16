@@ -16,12 +16,11 @@ use nom::{
     multi::{many0, many1},
     sequence::terminated,
 };
+use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 use walkdir::{DirEntry, WalkDir};
 
-pub async fn search_apps(
-    db: Arc<DB>,
-) -> AppsResult<Vec<(DBTableEntry<AppEntry>, Option<DBTableEntry<AppIcon>>)>> {
+pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<DBTableEntry<AppEntryWithIcon>>> {
     let xdg_paths = std::env::var("XDG_DATA_DIRS").ok().map(|dirs_str| {
         dirs_str
             .split(":")
@@ -137,7 +136,7 @@ pub async fn search_apps(
                 .find_map(|(ind, i)| (Some(i.id()) == app.icon).then_some(ind));
             let icon = ind.map(|ind| icons.remove(ind));
 
-            (app, icon)
+            app.map(move |a| a.switch_to_icon(icon))
         })
         .collect_vec())
 }
@@ -183,16 +182,25 @@ where
     }
 }
 
+pub type AppEntryIconId = AppEntry<DBEntryId>;
+pub type AppEntryWithIcon = AppEntry<DBTableEntry<AppIcon>>;
+
 #[db_entry]
 #[db(db_name = "apps", table_name = "entries")]
-#[derive(Clone)]
-pub struct AppEntry {
+pub struct AppEntry<I>
+where
+    I: IsAppEntryIconData,
+{
     pub name: String,
     pub exec: Vec<String>,
-    pub icon: Option<DBEntryId>,
+    #[serde(bound = "I: serde::Serialize + for<'d> serde::Deserialize<'d>")]
+    pub icon: Option<I>,
 }
 
-impl AppEntry {
+impl<I> AppEntry<I>
+where
+    I: IsAppEntryIconData,
+{
     pub async fn new(path: impl AsRef<Path>, db: Arc<DB>) -> AppsResult<Self> {
         let path = path.as_ref();
         let entry = DesktopEntry::from_path::<&str>(path, None)?;
@@ -208,13 +216,21 @@ impl AppEntry {
             Some(icon_str) => {
                 let icons = db.get_table::<AppIcon>().await?;
                 icons.into_iter().find_map(|e| {
-                    (e.name == icon_str || e.path.as_path() == Path::new(icon_str)).then(|| e.id())
+                    (e.name == icon_str || e.path.as_path() == Path::new(icon_str))
+                        .then(|| I::from_entry(e))
                 })
             }
             None => None,
         };
 
         Ok(Self { name, exec, icon })
+    }
+}
+
+impl AppEntryIconId {
+    fn switch_to_icon(self, icon: Option<DBTableEntry<AppIcon>>) -> AppEntryWithIcon {
+        let Self { name, exec, .. } = self;
+        AppEntry { name, exec, icon }
     }
 }
 
@@ -303,6 +319,22 @@ impl PartialOrd for AppIconDims {
 impl Ord for AppIconDims {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.area().cmp(&other.area())
+    }
+}
+
+pub trait IsAppEntryIconData: Serialize + for<'de> Deserialize<'de> {
+    fn from_entry(entry: DBTableEntry<AppIcon>) -> Self;
+}
+
+impl IsAppEntryIconData for DBTableEntry<AppIcon> {
+    fn from_entry(entry: DBTableEntry<AppIcon>) -> Self {
+        entry
+    }
+}
+
+impl IsAppEntryIconData for DBEntryId {
+    fn from_entry(entry: DBTableEntry<AppIcon>) -> Self {
+        entry.id()
     }
 }
 
