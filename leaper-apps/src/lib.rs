@@ -5,7 +5,7 @@ use std::{
 
 use freedesktop_desktop_entry::DesktopEntry;
 use itertools::Itertools;
-use leaper_db::{DB, DBEntryId, DBTableEntry, db_entry};
+use leaper_db::{DB, db_entry};
 use macros::lerror;
 use nom::{
     IResult, Parser,
@@ -17,10 +17,9 @@ use nom::{
     sequence::terminated,
 };
 use serde::{Deserialize, Serialize};
-use tokio::task::JoinSet;
 use walkdir::{DirEntry, WalkDir};
 
-pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<DBTableEntry<AppEntryWithIcon>>> {
+pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<AppEntry>> {
     let xdg_paths = std::env::var("XDG_DATA_DIRS").ok().map(|dirs_str| {
         dirs_str
             .split(":")
@@ -38,11 +37,11 @@ pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<DBTableEntry<AppEntryWit
         .map(SearchPath::from)
         .collect_vec();
 
-    let mut icons = search_paths
+    let icons = search_paths
         .clone()
         .into_iter()
-        .fold(JoinSet::new(), |mut join_set, search_path| {
-            join_set.spawn(search_path.search(|entry| async move {
+        .map(|search_path| {
+            search_path.search(|entry| {
                 let path = entry.path();
 
                 if path.is_dir() {
@@ -63,13 +62,8 @@ pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<DBTableEntry<AppEntryWit
                 }
 
                 Ok(Some(AppIcon::new(path)?))
-            }));
-
-            join_set
+            })
         })
-        .join_all()
-        .await
-        .into_iter()
         .collect::<AppsResult<Vec<_>>>()?
         .into_iter()
         .flat_map(|x| {
@@ -77,84 +71,54 @@ pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<DBTableEntry<AppEntryWit
                 .flatten()
                 .sorted_by_key(|i| (i.path.clone(), i.dims))
         })
-        .map(DBTableEntry::from)
         .collect_vec();
-
-    db.set_table(icons.clone()).await?;
 
     let apps = search_paths
         .into_iter()
-        .fold(JoinSet::new(), |mut join_set, search_path| {
-            let db = db.clone();
+        .map(|search_path| {
+            search_path.search(|entry| {
+                let path = entry.path();
 
-            join_set.spawn(search_path.search(move |entry| {
-                let db = db.clone();
-
-                async move {
-                    let path = entry.path();
-
-                    if path.is_dir() {
-                        return Ok(None);
-                    }
-
-                    let Some(ext) = path.extension() else {
-                        return Ok(None);
-                    };
-
-                    if ext != "desktop" {
-                        return Ok(None);
-                    }
-
-                    Ok(AppEntry::new(path, db)
-                        .await
-                        .inspect_err(|err| tracing::error!("{err}"))
-                        .ok())
+                if path.is_dir() {
+                    return Ok(None);
                 }
-            }));
 
-            join_set
+                let Some(ext) = path.extension() else {
+                    return Ok(None);
+                };
+
+                if ext != "desktop" {
+                    return Ok(None);
+                }
+
+                Ok(AppEntry::new(path, &icons)
+                    .inspect_err(|err| tracing::error!("{err}"))
+                    .ok())
+            })
         })
-        .join_all()
-        .await
-        .into_iter()
         .collect::<AppsResult<Vec<_>>>()?
         .into_iter()
         .flat_map(|x| x.into_iter().flatten().unique_by(|x| x.name.clone()))
         .unique_by(|x| x.name.clone())
         .sorted_by_key(|x| x.name.clone())
-        .map(DBTableEntry::from)
         .collect_vec();
 
     db.set_table(apps.clone()).await?;
+    tracing::trace!("Cached app list [{} entries]", apps.len());
 
-    Ok(apps
-        .into_iter()
-        .map(|app| {
-            let ind = icons
-                .iter()
-                .enumerate()
-                .find_map(|(ind, i)| (Some(i.id()) == app.icon).then_some(ind));
-            let icon = ind.map(|ind| icons.remove(ind));
-
-            app.map(move |a| a.switch_to_icon(icon))
-        })
-        .collect_vec())
+    Ok(apps)
 }
 
 #[derive(bon::Builder, Clone)]
 struct SearchPath {
     #[builder(into)]
     path: PathBuf,
-    #[builder(default = 10)]
+    #[builder(default = 5)]
     depth: usize,
 }
 
 impl SearchPath {
-    async fn search<F, V>(self, process: impl Fn(DirEntry) -> F) -> AppsResult<Vec<V>>
-    where
-        F: Future<Output = AppsResult<V>> + Send + 'static,
-        V: Send + 'static,
-    {
+    fn search<V>(self, process: impl Fn(DirEntry) -> AppsResult<V>) -> AppsResult<Vec<V>> {
         let Self { path, depth } = self;
 
         WalkDir::new(path)
@@ -162,13 +126,7 @@ impl SearchPath {
             .max_depth(depth)
             .into_iter()
             .flatten()
-            .fold(JoinSet::new(), |mut join_set, entry| {
-                join_set.spawn(process(entry));
-                join_set
-            })
-            .join_all()
-            .await
-            .into_iter()
+            .map(process)
             .collect::<AppsResult<Vec<_>>>()
     }
 }
@@ -182,26 +140,16 @@ where
     }
 }
 
-pub type AppEntryIconId = AppEntry<DBEntryId>;
-pub type AppEntryWithIcon = AppEntry<DBTableEntry<AppIcon>>;
-
 #[db_entry]
 #[db(db_name = "apps", table_name = "entries")]
-pub struct AppEntry<I>
-where
-    I: IsAppEntryIconData,
-{
+pub struct AppEntry {
     pub name: String,
     pub exec: Vec<String>,
-    #[serde(bound = "I: serde::Serialize + for<'d> serde::Deserialize<'d>")]
-    pub icon: Option<I>,
+    pub icon: Option<AppIcon>,
 }
 
-impl<I> AppEntry<I>
-where
-    I: IsAppEntryIconData,
-{
-    pub async fn new(path: impl AsRef<Path>, db: Arc<DB>) -> AppsResult<Self> {
+impl AppEntry {
+    pub fn new(path: impl AsRef<Path>, icons: &[AppIcon]) -> AppsResult<Self> {
         let path = path.as_ref();
         let entry = DesktopEntry::from_path::<&str>(path, None)?;
         let name = entry
@@ -213,13 +161,9 @@ where
         let exec = entry.parse_exec()?;
 
         let icon = match entry.icon() {
-            Some(icon_str) => {
-                let icons = db.get_table::<AppIcon>().await?;
-                icons.into_iter().find_map(|e| {
-                    (e.name == icon_str || e.path.as_path() == Path::new(icon_str))
-                        .then(|| I::from_entry(e))
-                })
-            }
+            Some(icon_str) => icons.iter().find_map(|e| {
+                (e.name == icon_str || e.path.as_path() == Path::new(icon_str)).then(|| e.clone())
+            }),
             None => None,
         };
 
@@ -227,16 +171,7 @@ where
     }
 }
 
-impl AppEntryIconId {
-    fn switch_to_icon(self, icon: Option<DBTableEntry<AppIcon>>) -> AppEntryWithIcon {
-        let Self { name, exec, .. } = self;
-        AppEntry { name, exec, icon }
-    }
-}
-
-#[db_entry]
-#[db(db_name = "apps", table_name = "icons")]
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppIcon {
     pub name: String,
     pub path: PathBuf,
@@ -254,21 +189,10 @@ impl AppIcon {
 
         let dims = path.components().rev().find_map(|comp| {
             let comp_str = comp.as_os_str().to_string_lossy().to_string();
-            let dims = AppIconDims::parse(&comp_str).inspect_err(|err| {
-                #[cfg(not(feature = "profile"))]
-                let _err = err;
-
-                #[cfg(feature = "profile")]
-                tracing::trace!("[ERR] {err}");
-            });
+            let dims = AppIconDims::parse(&comp_str);
 
             dims.ok().map(|(_, dims)| dims)
         });
-
-        #[cfg(feature = "profile")]
-        if dims.is_none() {
-            tracing::trace!("[WARN] Couldn't identify image dimensions!");
-        }
 
         Ok(Self {
             name,
@@ -320,22 +244,6 @@ impl PartialOrd for AppIconDims {
 impl Ord for AppIconDims {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.area().cmp(&other.area())
-    }
-}
-
-pub trait IsAppEntryIconData: Serialize + for<'de> Deserialize<'de> {
-    fn from_entry(entry: DBTableEntry<AppIcon>) -> Self;
-}
-
-impl IsAppEntryIconData for DBTableEntry<AppIcon> {
-    fn from_entry(entry: DBTableEntry<AppIcon>) -> Self {
-        entry
-    }
-}
-
-impl IsAppEntryIconData for DBEntryId {
-    fn from_entry(entry: DBTableEntry<AppIcon>) -> Self {
-        entry.id()
     }
 }
 

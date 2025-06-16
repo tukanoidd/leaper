@@ -11,8 +11,8 @@ use iced::{
 use iced_aw::Spinner;
 use iced_layershell::Application;
 use itertools::Itertools;
-use leaper_apps::{AppEntryWithIcon, AppsResult, search_apps};
-use leaper_db::{DB, DBResult, DBTableEntry};
+use leaper_apps::{AppEntry, AppsResult, search_apps};
+use leaper_db::{DB, DBResult};
 use tracing::Instrument;
 
 pub type AppTheme = iced::Theme;
@@ -71,7 +71,7 @@ impl Application for App {
                     return AppTask::perform(
                         {
                             let span = tracing::trace_span!("get_cached_list");
-                            async move { db.get_table::<AppEntryWithIcon>().await }.instrument(span)
+                            async move { db.get_table::<AppEntry>().await }.instrument(span)
                         },
                         AppMsg::InitApps,
                     );
@@ -84,6 +84,12 @@ impl Application for App {
             AppMsg::InitApps(apps) => match apps {
                 Ok(apps) => {
                     self.apps = apps;
+                    self.apps.sort_by_key(|a| a.name.clone());
+
+                    tracing::trace!(
+                        "Initialized apps list from cache [{} entries]",
+                        self.apps.len()
+                    );
 
                     return AppTask::perform(
                         search_apps(self.db.clone().unwrap()),
@@ -99,6 +105,8 @@ impl Application for App {
                 Ok(apps) => {
                     self.apps = apps;
                     self.selected = self.selected.clamp(0, self.apps.len() - 1);
+
+                    tracing::trace!("Loaded a fresh list of apps [{} entries]", self.apps.len());
                 }
                 Err(err) => {
                     tracing::error!("Failed to load new app list: {err}");
@@ -330,11 +338,7 @@ impl App {
     const APP_ENTRY_IMAGE_SIZE: f32 = Self::APP_ENTRY_HEIGHT - Self::APP_ENTRY_PADDING[1] * 2.0;
     const APP_ENTRY_TEXT_HEIGHT: f32 = Self::APP_ENTRY_IMAGE_SIZE * 0.5;
 
-    fn app_entry<'a>(
-        app: &'a DBTableEntry<AppEntryWithIcon>,
-        ind: usize,
-        selected: usize,
-    ) -> AppElement<'a> {
+    fn app_entry<'a>(app: &'a AppEntry, ind: usize, selected: usize) -> AppElement<'a> {
         let r = match &app.icon {
             Some(icon) => row![
                 image(&icon.path)
@@ -372,7 +376,7 @@ pub struct AppFlags {
     pub project_dirs: ProjectDirs,
 }
 
-type AppsIcons = Vec<DBTableEntry<AppEntryWithIcon>>;
+type AppsIcons = Vec<AppEntry>;
 
 type InitAppsIconsResult = DBResult<AppsIcons>;
 type LoadAppsIconsResult = AppsResult<AppsIcons>;

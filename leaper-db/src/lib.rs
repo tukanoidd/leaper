@@ -1,8 +1,8 @@
 use std::{fmt::Debug, sync::Arc};
 
-use derive_more::{Deref, DerefMut};
 use serde::{Deserialize, Serialize};
 use surrealdb::{Surreal, Uuid, engine::local::Db, method::Stream, opt::IntoEndpoint};
+use tokio::task::JoinSet;
 use uuid::Timestamp;
 
 pub use serde;
@@ -13,7 +13,7 @@ pub type DBEntryId = surrealdb::RecordId;
 
 pub const NAMESPACE: &str = "leaper";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DB {
     db: Surreal<Db>,
 }
@@ -29,7 +29,17 @@ impl DB {
         Ok(Self { db })
     }
 
-    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
+    #[cfg_attr(
+        feature = "profile",
+        tracing::instrument(
+            skip(self),
+            level = "trace",
+            fields(
+                db_name = T::DB_NAME,
+                table_name = T::NAME
+            )
+        ),
+    )]
     async fn use_db<T>(&self) -> DBResult<()>
     where
         T: DBTable,
@@ -38,8 +48,18 @@ impl DB {
         Ok(())
     }
 
-    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
-    pub async fn get_table<E>(&self) -> DBResult<Vec<DBTableEntry<E>>>
+    #[cfg_attr(
+        feature = "profile",
+        tracing::instrument(
+            skip(self),
+            level = "trace",
+            fields(
+                db_name = E::Table::DB_NAME,
+                name = E::Table::NAME
+            )
+        )
+    )]
+    pub async fn get_table<E>(&self) -> DBResult<Vec<E>>
     where
         E: TDBTableEntry,
     {
@@ -48,7 +68,7 @@ impl DB {
     }
 
     #[tracing::instrument(skip(self), level = "trace")]
-    pub async fn live_table<E>(&self) -> DBResult<Stream<Vec<DBTableEntry<E>>>>
+    pub async fn live_table<E>(&self) -> DBResult<Stream<Vec<E>>>
     where
         E: TDBTableEntry,
     {
@@ -56,23 +76,42 @@ impl DB {
         Ok(self.db.select(E::Table::NAME).live().await?)
     }
 
-    #[tracing::instrument(skip(self, table), level = "trace")]
-    pub async fn set_table<E, I, IE>(&self, table: I) -> DBResult<Vec<DBTableEntry<E>>>
+    #[tracing::instrument(
+        skip(self, table),
+        level = "trace",
+        fields(
+            db_name = E::Table::DB_NAME,
+            name = E::Table::NAME
+        )
+    )]
+    pub async fn set_table<E, I>(&self, table: I) -> DBResult<Vec<E>>
     where
         E: TDBTableEntry + 'static,
-        I: IntoIterator<Item = IE>,
-        IE: Into<DBTableEntry<E>>,
+        I: IntoIterator<Item = E>,
     {
         self.use_db::<E::Table>().await?;
-        Ok(self
-            .db
-            .update(E::Table::NAME)
-            .content(table.into_iter().map(Into::into).collect::<Vec<_>>())
-            .await?)
+        self.db.delete::<Vec<E>>(E::Table::NAME).await?;
+
+        let list = table.into_iter().collect::<Vec<_>>();
+
+        list.clone()
+            .into_iter()
+            .fold(JoinSet::new(), |mut join_set, entry| {
+                let sc = self.clone();
+
+                join_set.spawn(async move { sc.new_entry::<E>(entry.clone()).await });
+                join_set
+            })
+            .join_all()
+            .await
+            .into_iter()
+            .collect::<DBResult<Vec<_>>>()?;
+
+        Ok(list)
     }
 
     #[tracing::instrument(skip(self), level = "trace")]
-    pub async fn clear_table<E>(&self) -> DBResult<Vec<DBTableEntry<E>>>
+    pub async fn clear_table<E>(&self) -> DBResult<Vec<E>>
     where
         E: TDBTableEntry,
     {
@@ -81,7 +120,7 @@ impl DB {
     }
 
     #[tracing::instrument(skip(self), level = "trace")]
-    pub async fn entry<E>(&self, id: Uuid) -> DBResult<DBTableEntry<E>>
+    pub async fn entry<E>(&self, id: Uuid) -> DBResult<E>
     where
         E: TDBTableEntry,
     {
@@ -90,26 +129,23 @@ impl DB {
     }
 
     #[tracing::instrument(skip(self), level = "trace")]
-    pub async fn new_entry<E>(
-        &self,
-        val: impl Into<DBTableEntry<E>> + Debug,
-    ) -> DBResult<DBTableEntry<E>>
+    pub async fn new_entry<E>(&self, val: impl Into<E> + Debug) -> DBResult<E>
     where
         E: TDBTableEntry + 'static,
     {
         let val = val.into();
-        let id = val.id.uuid();
+        let id = DBEntryId::new_timestamped::<E::Table>();
 
         self.use_db::<E::Table>().await?;
         self.db
             .create(E::Table::NAME)
             .content(val)
             .await?
-            .or_failed_to_add(id)
+            .or_failed_to_add(id.uuid())
     }
 
     #[tracing::instrument(skip(self), level = "trace")]
-    pub async fn remove_entry<E>(&self, id: Uuid) -> DBResult<DBTableEntry<E>>
+    pub async fn remove_entry<E>(&self, id: Uuid) -> DBResult<E>
     where
         E: TDBTableEntry,
     {
@@ -118,11 +154,7 @@ impl DB {
     }
 
     #[tracing::instrument(skip(self), level = "trace")]
-    pub async fn update_entry<E>(
-        &self,
-        id: Uuid,
-        val: impl Into<DBTableEntry<E>> + Debug,
-    ) -> DBResult<DBTableEntry<E>>
+    pub async fn update_entry<E>(&self, id: Uuid, val: impl Into<E> + Debug) -> DBResult<E>
     where
         E: TDBTableEntry + 'static,
     {
@@ -165,50 +197,9 @@ impl TDBEntryId for DBEntryId {
     }
 }
 
-#[derive(Debug, Clone, Deref, DerefMut, Serialize, Deserialize)]
-pub struct DBTableEntry<D>
-where
-    D: TDBTableEntry,
+pub trait TDBTableEntry:
+    Clone + std::fmt::Debug + Serialize + for<'de> Deserialize<'de> + Send + Sync
 {
-    id: DBEntryId,
-    #[deref]
-    #[deref_mut]
-    #[serde(flatten, bound(deserialize = "for<'d> D: Deserialize<'d>"))]
-    val: D,
-}
-
-impl<D> DBTableEntry<D>
-where
-    D: TDBTableEntry,
-{
-    pub fn new(val: D) -> Self {
-        let id = DBEntryId::new_timestamped::<D::Table>();
-        Self { id, val }
-    }
-
-    pub fn id(&self) -> DBEntryId {
-        self.id.clone()
-    }
-
-    pub fn map<V>(self, f: impl FnOnce(D) -> V) -> DBTableEntry<V>
-    where
-        V: TDBTableEntry,
-    {
-        let Self { id, val } = self;
-        DBTableEntry { id, val: f(val) }
-    }
-}
-
-impl<D> From<D> for DBTableEntry<D>
-where
-    D: TDBTableEntry,
-{
-    fn from(value: D) -> Self {
-        Self::new(value)
-    }
-}
-
-pub trait TDBTableEntry: Serialize + for<'de> Deserialize<'de> {
     type Table: DBTable;
 }
 
@@ -228,15 +219,15 @@ pub trait DBOptionExt<E>
 where
     E: TDBTableEntry,
 {
-    fn or_not_found(self, id: Uuid) -> DBResult<DBTableEntry<E>>;
-    fn or_failed_to_add(self, id: Uuid) -> DBResult<DBTableEntry<E>>;
+    fn or_not_found(self, id: Uuid) -> DBResult<E>;
+    fn or_failed_to_add(self, id: Uuid) -> DBResult<E>;
 }
 
-impl<E> DBOptionExt<E> for Option<DBTableEntry<E>>
+impl<E> DBOptionExt<E> for Option<E>
 where
     E: TDBTableEntry,
 {
-    fn or_not_found(self, id: Uuid) -> DBResult<DBTableEntry<E>> {
+    fn or_not_found(self, id: Uuid) -> DBResult<E> {
         self.ok_or_else(|| DBError::NotFound {
             db: E::Table::DB_NAME.into(),
             table: E::Table::NAME.into(),
@@ -244,7 +235,7 @@ where
         })
     }
 
-    fn or_failed_to_add(self, id: Uuid) -> DBResult<DBTableEntry<E>> {
+    fn or_failed_to_add(self, id: Uuid) -> DBResult<E> {
         self.ok_or_else(|| DBError::FailedToAdd {
             db: E::Table::DB_NAME.into(),
             table: E::Table::NAME.into(),
