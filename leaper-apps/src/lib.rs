@@ -235,7 +235,8 @@ impl AppEntryIconId {
 }
 
 #[db_entry]
-#[db(db_name = "apps", table_name = "icons", derives(Hash, PartialEq, Eq))]
+#[db(db_name = "apps", table_name = "icons")]
+#[derive(Hash, PartialEq, Eq)]
 pub struct AppIcon {
     pub name: String,
     pub path: PathBuf,

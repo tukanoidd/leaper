@@ -1,9 +1,6 @@
-use std::ops::Deref;
-
 use darling::{
     FromDeriveInput, FromField, FromVariant,
     ast::{Data, Fields, Style},
-    util::PathList,
 };
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -18,7 +15,7 @@ pub struct DBEntry {
     ident: Ident,
     generics: Generics,
     data: Data<DBEntryVariant, DBEntryField>,
-    derives: Option<PathList>,
+    attrs: Vec<Attribute>,
     db_name: LitStr,
     table_name: LitStr,
 }
@@ -30,18 +27,13 @@ impl DeriveInputUtil for DBEntry {
             ident,
             generics,
             data,
-            derives,
+            attrs,
             ..
         } = &self;
 
         let table = self.gen_table();
 
-        let derives = derives.as_ref().map(|d| {
-            let d = d.deref().iter();
-            quote!(, #(#d),*)
-        });
-        let derives =
-            quote!(#[derive(Debug, Clone, serde::Serialize, serde::Deserialize #derives)]);
+        let derives = quote!(#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]);
 
         let entry = self.gen_entry();
         let (_impl_gen, ty_gen, where_gen) = generics.split_for_impl();
@@ -54,6 +46,7 @@ impl DeriveInputUtil for DBEntry {
                     #table
 
                     #derives
+                    #(#attrs)*
                     #vis enum #ident #ty_gen #where_gen {
                         #(#vars),*
                     }
