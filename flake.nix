@@ -42,6 +42,7 @@
               cargo-audit
               cargo-bloat
               cargo-features-manager
+              cargo-modules
 
               tracy
             ]);
