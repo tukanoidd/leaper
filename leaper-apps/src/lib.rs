@@ -158,7 +158,14 @@ impl AppEntry {
             .inspect_err(|err| tracing::error!("{err}"))
             .map(|s| s.to_string())
             .unwrap_or_else(|_| "Unknown".into());
-        let exec = entry.parse_exec()?;
+        let exec = entry
+            .exec()
+            .ok_or_else(|| AppsError::DesktopEntryNoExec(path.to_path_buf()))
+            .and_then(|exec_str| {
+                shlex::split(exec_str).ok_or_else(|| {
+                    AppsError::DesktopEntryParseExec(path.to_path_buf(), exec_str.into())
+                })
+            })?;
 
         let icon = match entry.icon() {
             Some(icon_str) => icons.iter().find_map(|e| {
@@ -255,6 +262,10 @@ pub enum AppsError {
 
     #[lerr(str = "{0:?} provides no name!")]
     DesktopEntryNoName(PathBuf),
+    #[lerr(str = "{0:?} provides no exec!")]
+    DesktopEntryNoExec(PathBuf),
+    #[lerr(str = "Failed to parse exec '{1}' from {0:?}!")]
+    DesktopEntryParseExec(PathBuf, String),
 
     #[lerr(str = "{0}")]
     DB(#[lerr(from)] leaper_db::DBError),
@@ -264,6 +275,4 @@ pub enum AppsError {
 
     #[lerr(str = "[.desktop::decode] {0}")]
     DesktopEntryParse(#[lerr(from, wrap = Arc)] freedesktop_desktop_entry::DecodeError),
-    #[lerr(str = "[.desktop::decode] {0}")]
-    DesktopEntryExecParse(#[lerr(from, wrap = Arc)] freedesktop_desktop_entry::ExecError),
 }

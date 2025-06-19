@@ -163,6 +163,8 @@ impl Application for App {
             .get(ind)
             {
                 Some(app) => {
+                    tracing::trace!("Running {}: {:?}", app.name, app.exec);
+
                     let cmd = &app.exec[0];
                     let args = match app.exec.len() {
                         1 => None,
@@ -175,11 +177,8 @@ impl Application for App {
                         cmd.args(args);
                     }
 
-                    match cmd.spawn() {
-                        Ok(_) => {
-                            tracing::trace!("Running {}", app.name);
-                        }
-                        Err(err) => tracing::error!("Failed to run the app {}: {err}", app.name),
+                    if let Err(err) = cmd.spawn() {
+                        tracing::error!("Failed to run the app {}: {err}", app.name)
                     }
 
                     return iced::exit();
