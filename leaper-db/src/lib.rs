@@ -1,8 +1,8 @@
 use std::{fmt::Debug, sync::Arc};
 
+use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
 use serde::{Deserialize, Serialize};
 use surrealdb::{Surreal, Uuid, engine::local::Db, method::Stream, opt::IntoEndpoint};
-use tokio::task::JoinSet;
 use uuid::Timestamp;
 
 pub use serde;
@@ -96,13 +96,13 @@ impl DB {
 
         list.clone()
             .into_iter()
-            .fold(JoinSet::new(), |mut join_set, entry| {
+            .map(|entry| {
                 let sc = self.clone();
 
-                join_set.spawn(async move { sc.new_entry::<E>(entry.clone()).await });
-                join_set
+                async move { sc.new_entry::<E>(entry.clone()).await }.boxed()
             })
-            .join_all()
+            .collect::<FuturesUnordered<_>>()
+            .collect::<Vec<_>>()
             .await
             .into_iter()
             .collect::<DBResult<Vec<_>>>()?;

@@ -3350,6 +3350,7 @@ dependencies = [
 name = "leaper-db"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "leaper-macros",
  "miette 7.6.0",
  "serde",

@@ -6,6 +6,7 @@ resolver = "3"
 iced = "0.13"
 
 tokio = "1.45"
+futures = "0.3.31"
 
 directories = "6.0"
 
