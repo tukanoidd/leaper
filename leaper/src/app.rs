@@ -12,7 +12,10 @@ use leaper_apps::AppEntry;
 use leaper_db::{DB, DBResult};
 use tracing::Instrument;
 
-use crate::app::apps::{Apps, AppsMsg};
+use crate::{
+    app::apps::{Apps, AppsMsg},
+    cli::AppMode,
+};
 
 pub type AppTheme = iced::Theme;
 pub type AppRenderer = iced::Renderer;
@@ -23,15 +26,20 @@ pub type AppSubscription<Msg = AppMsg> = iced::Subscription<Msg>;
 pub struct App {
     db: Option<Arc<DB>>,
 
+    mode: AppMode,
+
     apps: Apps,
 }
 
 impl App {
-    pub fn new(project_dirs: ProjectDirs) -> (Self, AppTask) {
+    pub fn new(project_dirs: ProjectDirs, mode: AppMode) -> (Self, AppTask) {
         let db_path = project_dirs.data_local_dir().join("db");
 
         let res = Self {
             db: None,
+
+            mode,
+
             apps: Default::default(),
         };
         let task = AppTask::batch([
@@ -102,7 +110,9 @@ impl App {
     }
 
     pub fn view(&self) -> AppElement<'_> {
-        self.apps.view().map(Into::into)
+        match self.mode {
+            AppMode::Apps => self.apps.view().map(Into::into),
+        }
     }
 
     pub fn theme(&self) -> AppTheme {

@@ -1,4 +1,5 @@
 mod app;
+mod cli;
 
 use std::sync::Arc;
 
@@ -11,22 +12,12 @@ use iced_layershell::{
 };
 use tracing_subscriber::{fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::app::App;
-
-/// A Launcher
-#[derive(Parser)]
-#[command(author, version, about, long_about = "None")]
-struct Cli {
-    #[arg(long)]
-    trace: bool,
-    #[arg(long)]
-    debug: bool,
-}
+use crate::{app::App, cli::Cli};
 
 fn main() -> LeaperResult<()> {
     miette::set_panic_hook();
 
-    let Cli { trace, debug } = Cli::parse();
+    let Cli { mode, trace, debug } = Cli::parse();
 
     init_tracing(trace, debug)?;
 
@@ -65,7 +56,7 @@ fn main() -> LeaperResult<()> {
         .settings(settings)
         .theme(App::theme)
         .subscription(App::subscription)
-        .run_with(|| App::new(project_dirs))?;
+        .run_with(|| App::new(project_dirs, mode))?;
 
     Ok(())
 }
