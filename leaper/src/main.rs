@@ -5,13 +5,13 @@ use std::sync::Arc;
 use clap::Parser;
 use directories::ProjectDirs;
 use iced_layershell::{
-    Application,
+    build_pattern::MainSettings,
     reexport::{Anchor, KeyboardInteractivity, Layer},
     settings::{LayerShellSettings, Settings, StartMode},
 };
 use tracing_subscriber::{fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::app::{App, AppFlags};
+use crate::app::App;
 
 /// A Launcher
 #[derive(Parser)]
@@ -42,9 +42,8 @@ fn main() -> LeaperResult<()> {
         ..
     } = Settings::<()>::default();
 
-    let settings = Settings {
+    let settings = MainSettings {
         id: Some("com.tukanoid.leaper".into()),
-        flags: AppFlags { project_dirs },
         layer_settings: LayerShellSettings {
             anchor: Anchor::empty(),
             layer: Layer::Overlay,
@@ -62,7 +61,11 @@ fn main() -> LeaperResult<()> {
         virtual_keyboard_support,
     };
 
-    App::run(settings)?;
+    iced_layershell::build_pattern::application("leaper", App::update, App::view)
+        .settings(settings)
+        .theme(App::theme)
+        .subscription(App::subscription)
+        .run_with(|| App::new(project_dirs))?;
 
     Ok(())
 }

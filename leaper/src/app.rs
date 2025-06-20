@@ -8,7 +8,6 @@ use iced::{
     keyboard::{self, Key, key},
     widget::text_input,
 };
-use iced_layershell::Application;
 use leaper_apps::AppEntry;
 use leaper_db::{DB, DBResult};
 use tracing::Instrument;
@@ -19,6 +18,7 @@ pub type AppTheme = iced::Theme;
 pub type AppRenderer = iced::Renderer;
 pub type AppElement<'a> = iced::Element<'a, AppMsg, AppTheme, AppRenderer>;
 pub type AppTask<Msg = AppMsg> = iced::Task<Msg>;
+pub type AppSubscription<Msg = AppMsg> = iced::Subscription<Msg>;
 
 pub struct App {
     db: Option<Arc<DB>>,
@@ -26,13 +26,8 @@ pub struct App {
     apps: Apps,
 }
 
-impl Application for App {
-    type Executor = iced::executor::Default;
-    type Message = AppMsg;
-    type Theme = AppTheme;
-    type Flags = AppFlags;
-
-    fn new(AppFlags { project_dirs }: Self::Flags) -> (Self, iced::Task<Self::Message>) {
+impl App {
+    pub fn new(project_dirs: ProjectDirs) -> (Self, AppTask) {
         let db_path = project_dirs.data_local_dir().join("db");
 
         let res = Self {
@@ -47,11 +42,7 @@ impl Application for App {
         (res, task)
     }
 
-    fn namespace(&self) -> String {
-        "leaper".into()
-    }
-
-    fn update(&mut self, message: Self::Message) -> AppTask {
+    pub fn update(&mut self, message: AppMsg) -> AppTask {
         match message {
             AppMsg::InitDB(db) => match db {
                 Ok(db) => {
@@ -110,21 +101,17 @@ impl Application for App {
         AppTask::none()
     }
 
-    fn view(&self) -> AppElement<'_> {
+    pub fn view(&self) -> AppElement<'_> {
         self.apps.view().map(Into::into)
     }
 
-    fn theme(&self) -> Self::Theme {
+    pub fn theme(&self) -> AppTheme {
         AppTheme::TokyoNightStorm
     }
 
-    fn subscription(&self) -> iced::Subscription<Self::Message> {
+    pub fn subscription(&self) -> AppSubscription {
         iced::event::listen().map(AppMsg::IcedEvent)
     }
-}
-
-pub struct AppFlags {
-    pub project_dirs: ProjectDirs,
 }
 
 #[iced_layershell::to_layer_message]

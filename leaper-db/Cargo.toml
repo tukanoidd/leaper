@@ -23,7 +23,7 @@ tracing.workspace = true
 thiserror.workspace = true
 miette.workspace = true
 
-surrealdb = { version = "2.3.3", default-features = false, features = [
+surrealdb = { version = "2.3.5", default-features = false, features = [
   "kv-surrealkv",
 ] }
 uuid = "1.17.0"
