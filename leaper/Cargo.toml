@@ -16,7 +16,7 @@ leaper-db.path = "../leaper-db"
 leaper-apps.path = "../leaper-apps"
 macros = { path = "../leaper-macros", package = "leaper-macros" }
 
-iced = { workspace = true, features = ["tokio", "image", "advanced"] }
+iced = { workspace = true, features = ["tokio", "image", "svg", "advanced"] }
 tokio.workspace = true
 
 directories.workspace = true

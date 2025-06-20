@@ -1,4 +1,6 @@
 mod apps;
+mod style;
+mod types;
 
 use std::sync::Arc;
 

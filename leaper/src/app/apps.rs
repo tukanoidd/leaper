@@ -4,14 +4,20 @@ use iced::{
     Length,
     advanced::widget::{Id, operate, operation::scrollable::scroll_to},
     alignment::{Horizontal, Vertical},
-    widget::{button, center, column, horizontal_rule, image, row, scrollable, text, text_input},
+    widget::{
+        Space, button, center, column, horizontal_rule, image, row, scrollable, svg, text,
+        text_input,
+    },
 };
 use iced_aw::Spinner;
 use itertools::Itertools;
 use leaper_apps::{AppEntry, AppsResult, search_apps};
 use leaper_db::{DB, DBResult};
 
-use crate::app::{AppElement, AppTask};
+use crate::app::{
+    AppElement, AppTask,
+    style::{app_scrollable_style, app_text_input_style},
+};
 
 type AppsIcons = Vec<AppEntry>;
 
@@ -57,8 +63,9 @@ impl Apps {
                     tracing::trace!("Loaded a fresh list of apps [{} entries]", self.apps.len());
                 }
                 Err(err) => {
-                    tracing::error!("Failed to load new app list: {err}");
-                    return iced::exit();
+                    tracing::error!("Failed to load new app list: {err}. Retrying...");
+                    return AppTask::perform(search_apps(db.clone().unwrap()), AppsMsg::LoadApps)
+                        .map(Into::into);
                 }
             },
 
@@ -197,7 +204,8 @@ impl Apps {
                 )
                 .on_submit(AppsMsg::RunSelectedApp.into())
                 .size(25)
-                .padding(10),
+                .padding(10)
+                .style(app_text_input_style),
         )
         .width(Length::Fill)
         .height(Length::Shrink)
@@ -224,6 +232,8 @@ impl Apps {
             .id(scrollable::Id::new(Self::LIST_ID))
             .width(Length::Fill)
             .height(Length::Fill)
+            .spacing(5)
+            .style(app_scrollable_style)
             .into()
         };
 
@@ -255,35 +265,43 @@ impl Apps {
 
     fn app_entry<'a>(app: &'a AppEntry, ind: usize, selected: usize) -> AppElement<'a> {
         let r = match &app.icon {
-            Some(icon) => row![
-                image(&icon.path)
-                    .width(Self::APP_ENTRY_IMAGE_SIZE)
-                    .height(Self::APP_ENTRY_IMAGE_SIZE)
-            ],
-            None => row![],
+            Some(icon) => match icon.svg {
+                true => row![
+                    svg(&icon.path)
+                        .width(Self::APP_ENTRY_IMAGE_SIZE)
+                        .height(Self::APP_ENTRY_IMAGE_SIZE),
+                ],
+                false => row![
+                    image(&icon.path)
+                        .width(Self::APP_ENTRY_IMAGE_SIZE)
+                        .height(Self::APP_ENTRY_IMAGE_SIZE),
+                ],
+            },
+            None => row![Space::new(
+                Self::APP_ENTRY_IMAGE_SIZE,
+                Self::APP_ENTRY_IMAGE_SIZE
+            )],
         }
         .push(text(&app.name).size(Self::APP_ENTRY_TEXT_HEIGHT))
         .height(Length::Fill)
+        .width(Length::Fill)
         .spacing(Self::APP_ENTRY_SPACING)
+        .padding(Self::APP_ENTRY_PADDING)
         .align_y(Vertical::Center);
 
-        button(
-            center(r)
-                .width(Length::Fill)
-                .padding(Self::APP_ENTRY_PADDING),
-        )
-        .on_press(AppsMsg::RunApp(ind).into())
-        .style(move |theme, status| {
-            let status = match selected == ind {
-                true => button::Status::Hovered,
-                false => status,
-            };
+        button(r)
+            .on_press(AppsMsg::RunApp(ind).into())
+            .style(move |theme, status| {
+                let status = match selected == ind {
+                    true => button::Status::Hovered,
+                    false => status,
+                };
 
-            button::secondary(theme, status)
-        })
-        .height(Length::Fixed(Self::APP_ENTRY_HEIGHT))
-        .width(Length::Fill)
-        .into()
+                button::secondary(theme, status)
+            })
+            .height(Length::Fixed(Self::APP_ENTRY_HEIGHT))
+            .width(Length::Fill)
+            .into()
     }
 }
 

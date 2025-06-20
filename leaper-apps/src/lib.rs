@@ -20,49 +20,72 @@ use serde::{Deserialize, Serialize};
 use walkdir::{DirEntry, WalkDir};
 
 pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<AppEntry>> {
-    let xdg_paths = std::env::var("XDG_DATA_DIRS").ok().map(|dirs_str| {
-        dirs_str
-            .split(":")
-            .map(PathBuf::from)
-            .filter(|p| p.exists())
-            .collect_vec()
-    });
+    let default_paths = ["/usr/share", "/snap/"].map(PathBuf::from);
 
-    let search_paths = xdg_paths
+    let xdg_paths = std::env::var("XDG_DATA_DIRS")
+        .ok()
+        .map(|dirs_str| {
+            dirs_str
+                .split(":")
+                .map(PathBuf::from)
+                .filter(|p| p.exists())
+                .collect_vec()
+        })
         .into_iter()
-        .flatten()
-        .chain(["/usr/share".into()])
+        .flatten();
+
+    let home_paths = std::env::var("HOME")
+        .ok()
+        .map(|home_str| {
+            let home_path = Path::new(&home_str);
+
+            let share_path = home_path.join(".local").join("share");
+            let icons_path = home_path.join(".icons");
+
+            [share_path, icons_path]
+        })
+        .into_iter()
+        .flatten();
+
+    let search_paths = default_paths
+        .into_iter()
+        .chain(xdg_paths)
+        .chain(home_paths)
         .unique()
         .sorted()
-        .map(SearchPath::from)
         .collect_vec();
 
     let icons = search_paths
         .clone()
         .into_iter()
         .map(|search_path| {
-            search_path.search(|entry| {
-                let path = entry.path();
+            SearchPath::builder()
+                .path(search_path)
+                .depth(10)
+                .build()
+                .search(|entry| {
+                    let path = entry.path();
 
-                if path.is_dir() {
-                    return Ok(None);
-                }
+                    if path.is_dir() {
+                        return Ok(None);
+                    }
 
-                let Some(ext) = path.extension() else {
-                    return Ok(None);
-                };
+                    let Some(ext) = path.extension() else {
+                        return Ok(None);
+                    };
 
-                let ext = ext.to_string_lossy().to_string();
+                    let ext = ext.to_string_lossy().to_string();
 
-                if !image::ImageFormat::all()
-                    .flat_map(|f| f.extensions_str())
-                    .any(|e| e == &ext)
-                {
-                    return Ok(None);
-                }
+                    if !image::ImageFormat::all()
+                        .flat_map(|f| f.extensions_str())
+                        .chain([&"svg"])
+                        .any(|e| e == &ext)
+                    {
+                        return Ok(None);
+                    }
 
-                Ok(Some(AppIcon::new(path)?))
-            })
+                    Ok(Some(AppIcon::new(path)?))
+                })
         })
         .collect::<AppsResult<Vec<_>>>()?
         .into_iter()
@@ -76,25 +99,29 @@ pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<AppEntry>> {
     let apps = search_paths
         .into_iter()
         .map(|search_path| {
-            search_path.search(|entry| {
-                let path = entry.path();
+            SearchPath::builder()
+                .path(search_path)
+                .depth(5)
+                .build()
+                .search(|entry| {
+                    let path = entry.path();
 
-                if path.is_dir() {
-                    return Ok(None);
-                }
+                    if path.is_dir() {
+                        return Ok(None);
+                    }
 
-                let Some(ext) = path.extension() else {
-                    return Ok(None);
-                };
+                    let Some(ext) = path.extension() else {
+                        return Ok(None);
+                    };
 
-                if ext != "desktop" {
-                    return Ok(None);
-                }
+                    if ext != "desktop" {
+                        return Ok(None);
+                    }
 
-                Ok(AppEntry::new(path, &icons)
-                    .inspect_err(|err| tracing::error!("{err}"))
-                    .ok())
-            })
+                    Ok(AppEntry::new(path, &icons)
+                        .inspect_err(|err| tracing::error!("{err}"))
+                        .ok())
+                })
         })
         .collect::<AppsResult<Vec<_>>>()?
         .into_iter()
@@ -113,7 +140,6 @@ pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<AppEntry>> {
 struct SearchPath {
     #[builder(into)]
     path: PathBuf,
-    #[builder(default = 5)]
     depth: usize,
 }
 
@@ -128,15 +154,6 @@ impl SearchPath {
             .flatten()
             .map(process)
             .collect::<AppsResult<Vec<_>>>()
-    }
-}
-
-impl<P> From<P> for SearchPath
-where
-    P: Into<PathBuf>,
-{
-    fn from(value: P) -> Self {
-        Self::builder().path(value).build()
     }
 }
 
@@ -168,9 +185,15 @@ impl AppEntry {
             })?;
 
         let icon = match entry.icon() {
-            Some(icon_str) => icons.iter().find_map(|e| {
+            Some(icon_str) => match icons.iter().find_map(|e| {
                 (e.name == icon_str || e.path.as_path() == Path::new(icon_str)).then(|| e.clone())
-            }),
+            }) {
+                None => {
+                    tracing::trace!("[ERROR] Failed to find an icon for {icon_str:?}");
+                    None
+                }
+                val => val,
+            },
             None => None,
         };
 
@@ -182,6 +205,7 @@ impl AppEntry {
 pub struct AppIcon {
     pub name: String,
     pub path: PathBuf,
+    pub svg: bool,
     pub dims: Option<AppIconDims>,
 }
 
@@ -204,6 +228,7 @@ impl AppIcon {
         Ok(Self {
             name,
             path: path.to_path_buf(),
+            svg: matches!(path.extension().and_then(|e| e.to_str()), Some("svg")),
             dims,
         })
     }
