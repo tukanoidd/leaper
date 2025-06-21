@@ -19,6 +19,8 @@ tokio.workspace = true
 
 tracing.workspace = true
 
+shlex.workspace = true
+
 bon.workspace = true
 itertools.workspace = true
 
@@ -32,4 +34,3 @@ image = "0.25.6"
 
 nom = "8.0.0"
 freedesktop-desktop-entry = "0.7.13"
-shlex = "1.3.0"

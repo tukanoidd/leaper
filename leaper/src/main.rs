@@ -33,13 +33,18 @@ fn main() -> LeaperResult<()> {
         ..
     } = Settings::<()>::default();
 
+    let size = match mode {
+        cli::AppMode::Apps => (500, 800),
+        cli::AppMode::Runner => (600, 100),
+    };
+
     let settings = MainSettings {
         id: Some("com.tukanoid.leaper".into()),
         layer_settings: LayerShellSettings {
             anchor: Anchor::empty(),
             layer: Layer::Overlay,
             exclusive_zone: 0,
-            size: Some((500, 800)),
+            size: Some(size),
             margin: (0, 0, 0, 0),
             keyboard_interactivity: KeyboardInteractivity::Exclusive,
             start_mode: StartMode::Active,
@@ -56,7 +61,7 @@ fn main() -> LeaperResult<()> {
         .settings(settings)
         .theme(App::theme)
         .subscription(App::subscription)
-        .run_with(|| App::new(project_dirs, mode))?;
+        .run_with(move || App::new(project_dirs, mode))?;
 
     Ok(())
 }

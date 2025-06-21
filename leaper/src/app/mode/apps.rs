@@ -15,7 +15,8 @@ use leaper_apps::{AppEntry, AppsResult, search_apps};
 use leaper_db::{DB, DBResult};
 
 use crate::app::{
-    AppElement, AppTask,
+    AppTask,
+    mode::{AppModeElement, AppModeTask},
     style::{app_scrollable_style, app_text_input_style},
 };
 
@@ -35,7 +36,7 @@ pub struct Apps {
 }
 
 impl Apps {
-    pub fn update(&mut self, msg: AppsMsg, db: &Option<Arc<DB>>) -> AppTask {
+    pub fn update(&mut self, msg: AppsMsg, db: Option<Arc<DB>>) -> AppModeTask {
         match msg {
             AppsMsg::InitApps(apps) => match apps {
                 Ok(apps) => {
@@ -183,7 +184,7 @@ impl Apps {
         AppTask::none()
     }
 
-    pub fn view(&self) -> AppElement<'_> {
+    pub fn view(&self) -> AppModeElement<'_> {
         column![self.search(), horizontal_rule(2), self.list()]
             .width(Length::Fill)
             .height(Length::Fill)
@@ -195,7 +196,7 @@ impl Apps {
     pub const SEARCH_ID: &'static str = "app_search_input";
     const LIST_ID: &'static str = "list";
 
-    fn search(&self) -> AppElement<'_> {
+    fn search(&self) -> AppModeElement<'_> {
         center(
             text_input("Search for an app...", &self.search)
                 .id(text_input::Id::new(Self::SEARCH_ID))
@@ -213,7 +214,7 @@ impl Apps {
         .into()
     }
 
-    fn list(&self) -> AppElement<'_> {
+    fn list(&self) -> AppModeElement<'_> {
         let (items, filtered) = match self.search.is_empty() {
             true => (&self.apps, false),
             false => (&self.filtered, true),
@@ -263,7 +264,7 @@ impl Apps {
     const APP_ENTRY_IMAGE_SIZE: f32 = Self::APP_ENTRY_HEIGHT - Self::APP_ENTRY_PADDING[1] * 2.0;
     const APP_ENTRY_TEXT_HEIGHT: f32 = Self::APP_ENTRY_IMAGE_SIZE * 0.5;
 
-    fn app_entry<'a>(app: &'a AppEntry, ind: usize, selected: usize) -> AppElement<'a> {
+    fn app_entry<'a>(app: &'a AppEntry, ind: usize, selected: usize) -> AppModeElement<'a> {
         let r = match &app.icon {
             Some(icon) => match icon.svg {
                 true => row![

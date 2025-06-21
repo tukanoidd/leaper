@@ -1,6 +1,6 @@
 use clap::{Parser, ValueEnum};
 
-/// A Launcher
+/// A Launcher/Command Runner
 #[derive(Parser)]
 #[command(author, version, about, long_about = "None")]
 pub struct Cli {
@@ -13,11 +13,11 @@ pub struct Cli {
     pub debug: bool,
 }
 
-#[derive(Default, Clone, ValueEnum)]
+#[derive(Default, Clone, Copy, ValueEnum)]
 pub enum AppMode {
     #[default]
     Apps,
-    // Runner,
+    Runner,
     // Term,
     // Bluetooth,
     // Wifi,

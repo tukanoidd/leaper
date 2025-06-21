@@ -2,8 +2,9 @@
 
 ## Anyway, what is it?
 1. App Launcher
-2. (Planned) File Finder
-3. Maybe more
+2. Command Runner
+3. (Planned) File Finder
+4. Maybe more
 
 ## Why
 All existing ones ive tried either have issues with styling on NixOs on

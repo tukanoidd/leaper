@@ -1,4 +1,5 @@
-mod apps;
+mod mode;
+
 mod style;
 mod types;
 
@@ -15,8 +16,12 @@ use leaper_db::{DB, DBResult};
 use tracing::Instrument;
 
 use crate::{
-    app::apps::{Apps, AppsMsg},
-    cli::AppMode,
+    app::mode::{
+        AppMode, AppModeMsg,
+        apps::{Apps, AppsMsg},
+        runner::Runner,
+    },
+    cli,
 };
 
 pub type AppTheme = iced::Theme;
@@ -29,25 +34,25 @@ pub struct App {
     db: Option<Arc<DB>>,
 
     mode: AppMode,
-
-    apps: Apps,
 }
 
 impl App {
-    pub fn new(project_dirs: ProjectDirs, mode: AppMode) -> (Self, AppTask) {
+    pub fn new(project_dirs: ProjectDirs, mode: cli::AppMode) -> (Self, AppTask) {
         let db_path = project_dirs.data_local_dir().join("db");
 
         let res = Self {
             db: None,
 
-            mode,
-
-            apps: Default::default(),
+            mode: mode.into(),
         };
-        let task = AppTask::batch([
-            text_input::focus(Apps::SEARCH_ID),
-            AppTask::perform(DB::init(db_path), |db| AppMsg::InitDB(db.map(Arc::new))),
-        ]);
+
+        let task = match mode {
+            cli::AppMode::Apps => AppTask::batch([
+                text_input::focus(Apps::SEARCH_ID),
+                AppTask::perform(DB::init(db_path), |db| AppMsg::InitDB(db.map(Arc::new))),
+            ]),
+            cli::AppMode::Runner => text_input::focus(Runner::INPUT_ID),
+        };
 
         (res, task)
     }
@@ -73,7 +78,9 @@ impl App {
                 }
             },
 
-            AppMsg::Apps(apps_msg) => return self.apps.update(apps_msg, &self.db),
+            AppMsg::Mode(mode_msg) => {
+                return self.mode.update(mode_msg, self.db.clone()).map(Into::into);
+            }
 
             AppMsg::IcedEvent(ev) => {
                 if let Event::Keyboard(event) = ev
@@ -112,9 +119,7 @@ impl App {
     }
 
     pub fn view(&self) -> AppElement<'_> {
-        match self.mode {
-            AppMode::Apps => self.apps.view().map(Into::into),
-        }
+        self.mode.view().map(Into::into)
     }
 
     pub fn theme(&self) -> AppTheme {
@@ -131,21 +136,7 @@ impl App {
 pub enum AppMsg {
     InitDB(DBResult<Arc<DB>>),
 
-    Apps(AppsMsg),
+    Mode(AppModeMsg),
 
     IcedEvent(Event),
 }
-
-macro_rules! into_app_msg {
-    ($($name:ident($err:ty)),+) => {
-        $(
-            impl From<$err> for AppMsg {
-                fn from(val: $err) -> Self {
-                    Self::$name(val)
-                }
-            }
-        )+
-    };
-}
-
-into_app_msg![Apps(AppsMsg)];

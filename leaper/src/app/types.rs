@@ -9,9 +9,12 @@ macro_rules! app_types {
         pastey::paste! {
             $(
                 #[allow(dead_code)]
-                pub type [< App $name >]<'a> = iced::widget::$name<
+                pub type [< App $name >]<
                     'a,
-                    $crate::app::AppMsg,
+                    Msg = $crate::app::AppMsg
+                > = iced::widget::$name<
+                    'a,
+                    Msg,
                     $crate::app::AppTheme,
                     $crate::app::AppRenderer
                 >;
