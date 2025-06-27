@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use leaper_db::DB;
 
+use crate::config::Config;
+
 pub mod apps;
+pub mod power;
 pub mod runner;
 
 macro_rules! app_mode {
@@ -72,10 +75,13 @@ macro_rules! app_mode {
 }
 
 app_mode![
-    | all_upd: (db: Option<Arc<DB>>);
+    | all_upd: (db: Option<Arc<DB>>, config: Arc<Config>);
 
     Apps {
         update: (db);
     },
-    Runner {}
+    Runner {},
+    Power {
+        update: (config);
+    }
 ];

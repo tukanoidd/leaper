@@ -18,7 +18,5 @@ pub enum AppMode {
     #[default]
     Apps,
     Runner,
-    // Term,
-    // Bluetooth,
-    // Wifi,
+    Power,
 }

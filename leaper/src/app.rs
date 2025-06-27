@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use directories::ProjectDirs;
 use iced::{
-    Event,
+    Event, Task,
     keyboard::{self, Key, key},
     widget::text_input,
 };
@@ -19,9 +19,11 @@ use crate::{
     app::mode::{
         AppMode, AppModeMsg,
         apps::{Apps, AppsMsg},
+        power::{Power, PowerMsg},
         runner::Runner,
     },
     cli,
+    config::Config,
 };
 
 pub type AppTheme = iced::Theme;
@@ -31,16 +33,22 @@ pub type AppTask<Msg = AppMsg> = iced::Task<Msg>;
 pub type AppSubscription<Msg = AppMsg> = iced::Subscription<Msg>;
 
 pub struct App {
+    config: Arc<Config>,
+
     db: Option<Arc<DB>>,
 
     mode: AppMode,
 }
 
+#[bon::bon]
 impl App {
-    pub fn new(project_dirs: ProjectDirs, mode: cli::AppMode) -> (Self, AppTask) {
+    #[builder]
+    pub fn new(project_dirs: ProjectDirs, config: Config, mode: cli::AppMode) -> (Self, AppTask) {
         let db_path = project_dirs.data_local_dir().join("db");
 
         let res = Self {
+            config: Arc::new(config),
+
             db: None,
 
             mode: mode.into(),
@@ -52,6 +60,9 @@ impl App {
                 AppTask::perform(DB::init(db_path), |db| AppMsg::InitDB(db.map(Arc::new))),
             ]),
             cli::AppMode::Runner => text_input::focus(Runner::INPUT_ID),
+            cli::AppMode::Power => Task::perform(Power::zbus_connect(), |res| {
+                AppMsg::Mode(PowerMsg::ZbusConnected(res).into())
+            }),
         };
 
         (res, task)
@@ -79,7 +90,10 @@ impl App {
             },
 
             AppMsg::Mode(mode_msg) => {
-                return self.mode.update(mode_msg, self.db.clone()).map(Into::into);
+                return self
+                    .mode
+                    .update(mode_msg, self.db.clone(), self.config.clone())
+                    .map(Into::into);
             }
 
             AppMsg::IcedEvent(ev) => {
@@ -123,7 +137,7 @@ impl App {
     }
 
     pub fn theme(&self) -> AppTheme {
-        AppTheme::TokyoNightStorm
+        self.config.theme.clone()
     }
 
     pub fn subscription(&self) -> AppSubscription {

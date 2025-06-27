@@ -26,6 +26,8 @@ bon.workspace = true
 pastey.workspace = true
 itertools.workspace = true
 
+serde.workspace = true
+
 tracing.workspace = true
 
 miette = { workspace = true, features = ["fancy"] }
@@ -35,12 +37,20 @@ iced_layershell = "0.13.7"
 iced_aw = { version = "0.12.2", default-features = false, features = [
   "spinner",
 ] }
+iced_fonts = { version = "0.2.1", features = ["nerd"] }
+
+logind-zbus = "5.3.2"
+zbus = { version = "5.7.1", features = ["tokio"] }
 
 clap = { version = "4.5.40", features = ["derive"] }
 
 nucleo = "0.5.0"
+heck = "0.5.0"
+
+toml = "0.8.23"
 
 derive_more = { version = "2.0.1", features = ["from"] }
+smart-default = "0.7.1"
 
 tracing-subscriber = { version = "0.3.19", features = [
   "ansi",
