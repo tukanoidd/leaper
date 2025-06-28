@@ -108,6 +108,16 @@ pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<AppEntry>> {
         })
         .collect_vec();
 
+    tracing::trace!(
+        "Found icons ({}): {:#?}",
+        icons.len(),
+        icons
+            .iter()
+            .sorted_by_key(|i| &i.name)
+            .map(|i| format!("{}: {:?}", i.name, i.path))
+            .collect_vec()
+    );
+
     let apps = app_search_paths
         .into_iter()
         .map(|search_path| {
