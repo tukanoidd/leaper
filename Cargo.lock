@@ -1212,6 +1212,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "color-maps"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "120b737cc99b0d73bf0a9bfa6086e84c0bde3b955851f37f812865bc08b35feb"
+dependencies = [
+ "lazy_static",
+]
+
+[[package]]
 name = "color_quant"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1539,6 +1548,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
 dependencies = [
  "cfg-if",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core 0.9.11",
+]
+
+[[package]]
+name = "dashmap"
+version = "6.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
  "hashbrown 0.14.5",
  "lock_api",
  "once_cell",
@@ -1967,6 +1990,15 @@ dependencies = [
  "rmp-serde",
  "serde",
  "tempfile",
+]
+
+[[package]]
+name = "ez-pixmap"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db6eea12c2400666a40349e9be4020a7a81a02a0adfa52d7b72695e720e8b44d"
+dependencies = [
+ "color-maps",
 ]
 
 [[package]]
@@ -3382,8 +3414,10 @@ version = "0.1.0"
 dependencies = [
  "bon",
  "clap",
+ "dashmap 6.1.0",
  "derive_more",
  "directories",
+ "ez-pixmap",
  "heck",
  "iced",
  "iced_aw",
@@ -6310,7 +6344,7 @@ dependencies = [
  "cedar-policy",
  "chrono",
  "ciborium",
- "dashmap",
+ "dashmap 5.5.3",
  "deunicode",
  "dmp",
  "ext-sort",

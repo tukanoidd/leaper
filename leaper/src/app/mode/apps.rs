@@ -1,15 +1,19 @@
-use std::sync::Arc;
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
+use dashmap::DashMap;
 use iced::{
     Length,
     advanced::widget::{Id, operate, operation::scrollable::scroll_to},
     alignment::{Horizontal, Vertical},
     widget::{
-        Space, button, center, column, horizontal_rule, image, row, scrollable, svg, text,
-        text_input,
+        button, center, column, horizontal_rule, image, row, scrollable, svg, text, text_input,
     },
 };
 use iced_aw::Spinner;
+use iced_fonts::{NERD_FONT, Nerd, nerd::icon_to_string};
 use itertools::Itertools;
 use leaper_apps::{AppEntry, AppsResult, search_apps};
 use leaper_db::{DB, DBResult};
@@ -33,6 +37,8 @@ pub struct Apps {
     search: String,
     matcher: nucleo::Matcher,
     selected: usize,
+
+    xpm_handles: Arc<Mutex<DashMap<PathBuf, image::Handle>>>,
 }
 
 impl Apps {
@@ -222,12 +228,9 @@ impl Apps {
 
         let scrllbl = || {
             scrollable(
-                column(
-                    items
-                        .iter()
-                        .enumerate()
-                        .map(|(ind, app)| Self::app_entry(app, ind, self.selected)),
-                )
+                column(items.iter().enumerate().map(|(ind, app)| {
+                    Self::app_entry(app, ind, self.selected, self.xpm_handles.clone())
+                }))
                 .align_x(Horizontal::Center),
             )
             .id(scrollable::Id::new(Self::LIST_ID))
@@ -264,7 +267,12 @@ impl Apps {
     const APP_ENTRY_IMAGE_SIZE: f32 = Self::APP_ENTRY_HEIGHT - Self::APP_ENTRY_PADDING[1] * 2.0;
     const APP_ENTRY_TEXT_HEIGHT: f32 = Self::APP_ENTRY_IMAGE_SIZE * 0.5;
 
-    fn app_entry<'a>(app: &'a AppEntry, ind: usize, selected: usize) -> AppModeElement<'a> {
+    fn app_entry<'a>(
+        app: &'a AppEntry,
+        ind: usize,
+        selected: usize,
+        xpm_handles: Arc<Mutex<DashMap<PathBuf, image::Handle>>>,
+    ) -> AppModeElement<'a> {
         let r = match &app.icon {
             Some(icon) => match icon.svg {
                 true => row![
@@ -272,16 +280,83 @@ impl Apps {
                         .width(Self::APP_ENTRY_IMAGE_SIZE)
                         .height(Self::APP_ENTRY_IMAGE_SIZE),
                 ],
-                false => row![
-                    image(&icon.path)
-                        .width(Self::APP_ENTRY_IMAGE_SIZE)
-                        .height(Self::APP_ENTRY_IMAGE_SIZE),
-                ],
+                false => match icon.xpm {
+                    true => {
+                        let xpm_handles = xpm_handles.lock().expect("Should be fine");
+
+                        let handle = match xpm_handles.contains_key(&icon.path) {
+                            true => xpm_handles.get(&icon.path),
+                            false => {
+                                let img = std::fs::read_to_string(&icon.path).ok().and_then(|s| {
+                                    let start = s.find('"').unwrap_or_default();
+                                    let end = s.rfind('"').unwrap_or_else(|| match s.is_empty() {
+                                        true => 0,
+                                        false => s.len() - 1,
+                                    });
+
+                                    let lines = &s[start..=end]
+                                        .lines()
+                                        .map(|line| line.trim_end_matches(',').trim_matches('"'))
+                                        .collect_vec();
+
+                                    ez_pixmap::RgbaImage::from(lines)
+                                        .inspect_err(|err| {
+                                            tracing::error!(
+                                                "Failed to parse pixmap at {:?}: {err}\n\nLines:\n{}",
+                                                icon.path,
+                                                lines.join("\n")
+                                            )
+                                        })
+                                        .ok()
+                                });
+
+                                let img_handle = img.map(|img| {
+                                    image::Handle::from_rgba(
+                                        img.width(),
+                                        img.height(),
+                                        img.data().to_vec(),
+                                    )
+                                });
+
+                                if let Some(handle) = img_handle {
+                                    xpm_handles.insert(icon.path.clone(), handle);
+                                }
+
+                                xpm_handles.get(&icon.path)
+                            }
+                        };
+
+                        match handle {
+                            Some(handle) => row![
+                                image(handle.clone())
+                                    .width(Self::APP_ENTRY_IMAGE_SIZE)
+                                    .height(Self::APP_ENTRY_IMAGE_SIZE)
+                            ],
+                            None => row![
+                                text(icon_to_string(Nerd::Error))
+                                    .font(NERD_FONT)
+                                    .align_x(Horizontal::Center)
+                                    .width(Self::APP_ENTRY_IMAGE_SIZE)
+                                    .height(Self::APP_ENTRY_IMAGE_SIZE)
+                                    .size(Self::APP_ENTRY_TEXT_HEIGHT)
+                            ],
+                        }
+                    }
+                    false => row![
+                        image(&icon.path)
+                            .width(Self::APP_ENTRY_IMAGE_SIZE)
+                            .height(Self::APP_ENTRY_IMAGE_SIZE),
+                    ],
+                },
             },
-            None => row![Space::new(
-                Self::APP_ENTRY_IMAGE_SIZE,
-                Self::APP_ENTRY_IMAGE_SIZE
-            )],
+            None => row![
+                text(icon_to_string(Nerd::Question))
+                    .font(NERD_FONT)
+                    .align_x(Horizontal::Center)
+                    .width(Self::APP_ENTRY_IMAGE_SIZE)
+                    .height(Self::APP_ENTRY_IMAGE_SIZE)
+                    .size(Self::APP_ENTRY_TEXT_HEIGHT)
+            ],
         }
         .push(text(&app.name).size(Self::APP_ENTRY_TEXT_HEIGHT))
         .height(Length::Fill)

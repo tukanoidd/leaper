@@ -11,7 +11,7 @@ use nom::{
     IResult, Parser,
     branch::permutation,
     bytes::tag,
-    character::{char, one_of},
+    character::{char, none_of, one_of},
     combinator::recognize,
     multi::{many0, many1},
     sequence::terminated,
@@ -20,7 +20,11 @@ use serde::{Deserialize, Serialize};
 use walkdir::{DirEntry, WalkDir};
 
 pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<AppEntry>> {
-    let default_paths = ["/usr/share", "/snap/"].map(PathBuf::from);
+    let default_paths = ["/usr/share", "/usr/local/share", "/snap/"]
+        .into_iter()
+        .map(PathBuf::from)
+        .filter(|p| p.exists())
+        .collect_vec();
 
     let xdg_paths = std::env::var("XDG_DATA_DIRS")
         .ok()
@@ -32,31 +36,37 @@ pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<AppEntry>> {
                 .collect_vec()
         })
         .into_iter()
-        .flatten();
+        .flatten()
+        .collect_vec();
 
-    let home_paths = std::env::var("HOME")
-        .ok()
-        .map(|home_str| {
-            let home_path = Path::new(&home_str);
+    let home_path = std::env::var("HOME").ok().map(PathBuf::from);
 
-            let share_path = home_path.join(".local").join("share");
-            let icons_path = home_path.join(".icons");
+    let home_share_path = home_path.as_ref().and_then(|hp| {
+        let p = hp.join(".local");
+        p.exists().then_some(p)
+    });
+    let home_icons_path = home_path.as_ref().and_then(|hp| {
+        let p = hp.join(".icons");
+        p.exists().then_some(p)
+    });
 
-            [share_path, icons_path]
-        })
-        .into_iter()
-        .flatten();
-
-    let search_paths = default_paths
-        .into_iter()
-        .chain(xdg_paths)
-        .chain(home_paths)
+    let app_search_paths = default_paths
+        .iter()
+        .chain(xdg_paths.iter())
+        .chain(home_share_path.iter())
         .unique()
         .sorted()
         .collect_vec();
 
-    let icons = search_paths
-        .clone()
+    let icon_search_paths = default_paths
+        .iter()
+        .chain(xdg_paths.iter())
+        .chain(home_icons_path.iter())
+        .unique()
+        .sorted()
+        .collect_vec();
+
+    let icons = icon_search_paths
         .into_iter()
         .map(|search_path| {
             SearchPath::builder()
@@ -74,12 +84,14 @@ pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<AppEntry>> {
                         return Ok(None);
                     };
 
-                    let ext = ext.to_string_lossy().to_string();
+                    let ext = ext.to_string_lossy().to_string().to_lowercase();
 
                     if !image::ImageFormat::all()
                         .flat_map(|f| f.extensions_str())
-                        .chain([&"svg"])
-                        .any(|e| e == &ext)
+                        .chain([&"svg", &"xpm"])
+                        .map(|s| s.to_lowercase())
+                        .unique()
+                        .any(|e| e == ext)
                     {
                         return Ok(None);
                     }
@@ -96,7 +108,7 @@ pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<AppEntry>> {
         })
         .collect_vec();
 
-    let apps = search_paths
+    let apps = app_search_paths
         .into_iter()
         .map(|search_path| {
             SearchPath::builder()
@@ -189,12 +201,15 @@ impl AppEntry {
                 (e.name == icon_str || e.path.as_path() == Path::new(icon_str)).then(|| e.clone())
             }) {
                 None => {
-                    tracing::trace!("[ERROR] Failed to find an icon for {icon_str:?}");
+                    tracing::error!("Failed to find an icon for {name} ({icon_str:?}): {exec:?}");
                     None
                 }
                 val => val,
             },
-            None => None,
+            None => {
+                tracing::warn!("Filed to find an icon entry for {name}: {exec:?}");
+                None
+            }
         };
 
         Ok(Self { name, exec, icon })
@@ -206,6 +221,7 @@ pub struct AppIcon {
     pub name: String,
     pub path: PathBuf,
     pub svg: bool,
+    pub xpm: bool,
     pub dims: Option<AppIconDims>,
 }
 
@@ -225,10 +241,13 @@ impl AppIcon {
             dims.ok().map(|(_, dims)| dims)
         });
 
+        let ext = path.extension().and_then(|e| e.to_str());
+
         Ok(Self {
             name,
             path: path.to_path_buf(),
-            svg: matches!(path.extension().and_then(|e| e.to_str()), Some("svg")),
+            svg: matches!(ext, Some("svg")),
+            xpm: matches!(ext, Some("xpm")),
             dims,
         })
     }
@@ -243,10 +262,11 @@ pub struct AppIconDims {
 impl AppIconDims {
     fn parse(input: &str) -> IResult<&str, Self> {
         permutation((
+            many0(none_of("0123456789")),
             terminated(Self::parse_decimal, tag("x")),
             Self::parse_decimal,
         ))
-        .map(|(width, height)| Self { width, height })
+        .map(|(_, width, height)| Self { width, height })
         .parse(input)
     }
 
