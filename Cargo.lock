@@ -1608,6 +1608,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.103",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -2020,6 +2021,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
 dependencies = [
  "simd-adler32",
+]
+
+[[package]]
+name = "file-lock"
+version = "2.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "040b48f80a749da50292d0f47a1e2d5bf1d772f52836c07f64bfccc62ba6e664"
+dependencies = [
+ "cc",
+ "libc",
 ]
 
 [[package]]
@@ -2951,6 +2962,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "icon-cache"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10b6b0035c1e5abb70d557088ce6c1336e573c3bd9ff2f5cb80cecb14b19d7e7"
+dependencies = [
+ "derive_more",
+ "file-lock",
+ "memmap2",
+ "zerocopy",
+]
+
+[[package]]
 name = "icu_collections"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3449,6 +3472,7 @@ version = "0.1.0"
 dependencies = [
  "bon",
  "freedesktop-desktop-entry",
+ "icon-cache",
  "image 0.25.6",
  "itertools 0.14.0",
  "leaper-db",

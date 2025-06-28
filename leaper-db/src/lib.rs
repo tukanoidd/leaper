@@ -19,7 +19,7 @@ pub struct DB {
 }
 
 impl DB {
-    #[tracing::instrument(level = "trace")]
+    #[cfg_attr(feature = "profile", tracing::instrument(level = "trace"))]
     pub async fn init<P>(
         endpoint: impl IntoEndpoint<P, Client = Db> + std::fmt::Debug,
     ) -> DBResult<Self> {
@@ -67,7 +67,7 @@ impl DB {
         Ok(self.db.select(E::Table::NAME).await?)
     }
 
-    #[tracing::instrument(skip(self), level = "trace")]
+    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
     pub async fn live_table<E>(&self) -> DBResult<Stream<Vec<E>>>
     where
         E: TDBTableEntry,
@@ -76,14 +76,14 @@ impl DB {
         Ok(self.db.select(E::Table::NAME).live().await?)
     }
 
-    #[tracing::instrument(
+    #[cfg_attr(feature = "profile", tracing::instrument(
         skip(self, table),
         level = "trace",
         fields(
             db_name = E::Table::DB_NAME,
             name = E::Table::NAME
         )
-    )]
+    ))]
     pub async fn set_table<E, I>(&self, table: I) -> DBResult<Vec<E>>
     where
         E: TDBTableEntry + 'static,
@@ -110,7 +110,7 @@ impl DB {
         Ok(list)
     }
 
-    #[tracing::instrument(skip(self), level = "trace")]
+    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
     pub async fn clear_table<E>(&self) -> DBResult<Vec<E>>
     where
         E: TDBTableEntry,
@@ -119,7 +119,7 @@ impl DB {
         Ok(self.db.delete(E::Table::NAME).await?)
     }
 
-    #[tracing::instrument(skip(self), level = "trace")]
+    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
     pub async fn entry<E>(&self, id: Uuid) -> DBResult<E>
     where
         E: TDBTableEntry,
@@ -128,7 +128,7 @@ impl DB {
         self.db.select((E::Table::NAME, id)).await?.or_not_found(id)
     }
 
-    #[tracing::instrument(skip(self), level = "trace")]
+    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
     pub async fn new_entry<E>(&self, val: impl Into<E> + Debug) -> DBResult<E>
     where
         E: TDBTableEntry + 'static,
@@ -144,7 +144,7 @@ impl DB {
             .or_failed_to_add(id.uuid())
     }
 
-    #[tracing::instrument(skip(self), level = "trace")]
+    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
     pub async fn remove_entry<E>(&self, id: Uuid) -> DBResult<E>
     where
         E: TDBTableEntry,
@@ -153,7 +153,7 @@ impl DB {
         self.db.delete((E::Table::NAME, id)).await?.or_not_found(id)
     }
 
-    #[tracing::instrument(skip(self), level = "trace")]
+    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
     pub async fn update_entry<E>(&self, id: Uuid, val: impl Into<E> + Debug) -> DBResult<E>
     where
         E: TDBTableEntry + 'static,
