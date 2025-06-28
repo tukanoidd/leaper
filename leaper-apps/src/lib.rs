@@ -75,58 +75,14 @@ pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<AppEntry>> {
 
     let mut icon_caches = vec![];
 
-    let icons = icon_search_paths
+    let mut icons = icon_search_paths
         .into_iter()
         .map(|search_path| {
             SearchPath::builder()
                 .path(search_path)
                 .depth(10)
                 .build()
-                .search(|entry| {
-                    let path = entry.path();
-
-                    if path.is_dir() {
-                        return Ok(None);
-                    }
-
-                    if matches!(
-                        path.file_name().and_then(|s| s.to_str()),
-                        Some("icon-theme.cache")
-                    ) {
-                        match OwnedIconCache::open(path) {
-                            Ok(cache) => icon_caches.push((path.to_path_buf(), cache)),
-                            Err(err) => {
-                                tracing::error!("Failed to open an icon cache at {path:?}: {err}!");
-                            }
-                        }
-
-                        return Ok(None);
-                    }
-
-                    let Some(ext) = path.extension() else {
-                        return Ok(None);
-                    };
-
-                    let ext = ext.to_string_lossy().to_string().to_lowercase();
-
-                    if !image::ImageFormat::all()
-                        .flat_map(|f| f.extensions_str())
-                        .chain([&"svg", &"xpm"])
-                        .map(|s| s.to_lowercase())
-                        .unique()
-                        .any(|e| e == ext)
-                    {
-                        // if matches!(ext.as_str(), "xml") {
-                        //     tracing::warn!("Skipping {path:?} at depth {}", entry.depth());
-                        // }
-
-                        return Ok(None);
-                    }
-
-                    Ok(Some(AppIcon::new(path).inspect_err(|err| {
-                        tracing::error!("Failed to load an icon from {path:?}: {err}")
-                    })?))
-                })
+                .search(|e| search_icons(e, Some(&mut icon_caches)))
         })
         .collect::<AppsResult<Vec<_>>>()?
         .into_iter()
@@ -185,7 +141,7 @@ pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<AppEntry>> {
                         return Ok(None);
                     }
 
-                    Ok(AppEntry::new(path, &icon_cache_refs, &icons)
+                    Ok(AppEntry::new(path, &icon_cache_refs, &mut icons)
                         .inspect_err(|err| tracing::error!("{err}"))
                         .ok())
                 })
@@ -198,9 +154,74 @@ pub async fn search_apps(db: Arc<DB>) -> AppsResult<Vec<AppEntry>> {
         .collect_vec();
 
     db.set_table(apps.clone()).await?;
-    tracing::trace!("Cached app list [{} entries]", apps.len());
+    tracing::trace!(
+        "Cached app list ({}), {:#?}",
+        apps.len(),
+        apps.iter()
+            .map(|app| format!(
+                "{} ({}): {:?}",
+                app.name,
+                app.icon
+                    .as_ref()
+                    .map(|i| format!("{} at {:?}", i.name, i.path))
+                    .unwrap_or("none".into()),
+                app.exec
+            ))
+            .collect_vec()
+    );
 
     Ok(apps)
+}
+
+fn search_icons(
+    entry: DirEntry,
+    icon_caches: Option<&mut Vec<(PathBuf, OwnedIconCache)>>,
+) -> Result<Option<AppIcon>, AppsError> {
+    let path = entry.path();
+
+    if path.is_dir() {
+        return Ok(None);
+    }
+
+    if let Some(icon_caches) = icon_caches
+        && matches!(
+            path.file_name().and_then(|s| s.to_str()),
+            Some("icon-theme.cache")
+        )
+    {
+        match OwnedIconCache::open(path) {
+            Ok(cache) => icon_caches.push((path.to_path_buf(), cache)),
+            Err(err) => {
+                tracing::error!("Failed to open an icon cache at {path:?}: {err}!");
+            }
+        }
+
+        return Ok(None);
+    }
+
+    let Some(ext) = path.extension() else {
+        return Ok(None);
+    };
+
+    let ext = ext.to_string_lossy().to_string().to_lowercase();
+
+    if !image::ImageFormat::all()
+        .flat_map(|f| f.extensions_str())
+        .chain([&"svg", &"xpm"])
+        .map(|s| s.to_lowercase())
+        .unique()
+        .any(|e| e == ext)
+    {
+        // if matches!(ext.as_str(), "xml") {
+        //     tracing::warn!("Skipping {path:?} at depth {}", entry.depth());
+        // }
+
+        return Ok(None);
+    }
+
+    Ok(Some(AppIcon::new(path).inspect_err(|err| {
+        tracing::error!("Failed to load an icon from {path:?}: {err}")
+    })?))
 }
 
 #[derive(bon::Builder, Clone)]
@@ -236,7 +257,7 @@ impl AppEntry {
     pub fn new(
         path: impl AsRef<Path>,
         icon_cache_refs: &[(&PathBuf, IconCache<'_>)],
-        icons: &[AppIcon],
+        icons: &mut Vec<AppIcon>,
     ) -> AppsResult<Self> {
         let path = path.as_ref();
         let entry = DesktopEntry::from_path::<&str>(path, None)?;
@@ -255,22 +276,72 @@ impl AppEntry {
                 })
             })?;
 
-        let icon = match entry.icon() {
+        let icon = Self::check_for_icon(&entry, &name, &exec, icon_cache_refs, icons);
+
+        Ok(Self { name, exec, icon })
+    }
+
+    fn check_for_icon(
+        entry: &DesktopEntry,
+        name: &str,
+        exec: &[String],
+        icon_cache_refs: &[(&PathBuf, IconCache<'_>)],
+        icons: &mut Vec<AppIcon>,
+    ) -> Option<AppIcon> {
+        match entry.icon() {
             Some(icon_str) => match icons.iter().find_map(|e| {
                 (e.name == icon_str || e.path.as_path() == Path::new(icon_str)).then(|| e.clone())
             }) {
                 None => {
-                    match icon_cache_refs.iter().find_map(|(_, c)| {
-                        c.icon(icon_str).and_then(|i| i.image_list.iter().next())
+                    match icon_cache_refs.iter().find_map(|(cache_dir, c)| {
+                        c.icon(icon_str)
+                            .and_then(|i| i.image_list.iter().next().map(|i| (cache_dir, i)))
                     }) {
-                        Some(i) => AppIcon::new(i.directory)
-                            .inspect_err(|err| {
+                        Some((cache_file, i)) => {
+                            let cache_dir = cache_file
+                                .parent()
+                                .map(PathBuf::from)
+                                .unwrap_or_else(|| "/".into());
+
+                            let dir = match i.directory.is_relative() {
+                                true => cache_dir.join(i.directory),
+                                false => i.directory.to_path_buf(),
+                            };
+
+                            let search_path = SearchPath::builder().path(&dir).depth(10).build();
+
+                            let maybe_icons = search_path
+                                .search(|e| search_icons(e, None))
+                                .inspect_err(|err| {
+                                    tracing::error!(
+                                        "Failed to get icons from cache dir: {dir:?}: {err}"
+                                    )
+                                })
+                                .into_iter()
+                                .flatten()
+                                .flatten()
+                                .collect_vec();
+
+                            let mut added = 0;
+
+                            maybe_icons.iter().for_each(|i| {
+                                if !icons.contains(i) {
+                                    tracing::trace!("Adding {i:?} from icon cache");
+                                    icons.push(i.clone());
+                                    added += 1;
+                                }
+                            });
+
+                            if added == 0 {
                                 tracing::error!(
-                                    "Failed to load an icon from cache at {:?} for {name}: {err}",
-                                    i.directory
-                                )
-                            })
-                            .ok(),
+                                    "Failed to find an icon for {name} ({icon_str:?}): {exec:?}"
+                                );
+                                return None;
+                            }
+
+                            Self::check_for_icon(entry, name, exec, icon_cache_refs, icons)
+                        }
+
                         None => {
                             tracing::error!(
                                 "Failed to find an icon for {name} ({icon_str:?}): {exec:?}"
@@ -282,12 +353,10 @@ impl AppEntry {
                 val => val,
             },
             None => {
-                tracing::warn!("Filed to find an icon entry for {name}: {exec:?}");
+                tracing::warn!("Failed to find an icon entry for {name}: {exec:?}");
                 None
             }
-        };
-
-        Ok(Self { name, exec, icon })
+        }
     }
 }
 
