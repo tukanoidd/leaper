@@ -212,10 +212,6 @@ fn search_icons(
         .unique()
         .any(|e| e == ext)
     {
-        // if matches!(ext.as_str(), "xml") {
-        //     tracing::warn!("Skipping {path:?} at depth {}", entry.depth());
-        // }
-
         return Ok(None);
     }
 
@@ -326,7 +322,6 @@ impl AppEntry {
 
                             maybe_icons.iter().for_each(|i| {
                                 if !icons.contains(i) {
-                                    tracing::trace!("Adding {i:?} from icon cache");
                                     icons.push(i.clone());
                                     added += 1;
                                 }

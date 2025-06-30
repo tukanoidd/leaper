@@ -1,7 +1,7 @@
 use iced::widget::{center, text_input};
 
 use crate::app::{
-    mode::{AppModeElement, AppModeTask},
+    mode::{AppModeElement, AppModeMsg, AppModeTask},
     style::app_text_input_style,
 };
 
@@ -31,7 +31,7 @@ impl Runner {
                             match std::process::Command::new(cmd).args(split).spawn() {
                                 Ok(_) => {
                                     tracing::debug!("Command spawned successfully!");
-                                    return iced::exit();
+                                    return AppModeTask::done(AppModeMsg::Exit);
                                 }
                                 Err(err) => tracing::error!("Failed to run the command: {err}"),
                             }

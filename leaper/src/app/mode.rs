@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use leaper_db::DB;
-
 use crate::config::Config;
 
 pub mod apps;
@@ -41,9 +39,10 @@ macro_rules! app_mode {
                     }
                 }
 
-                pub fn update(&mut self, msg: AppModeMsg $($(, $upd_arg:$upd_arg_ty)+)?) -> AppModeTask {
+                pub fn update(&mut self, msg: AppModeMsg $($(, $upd_arg:$upd_arg_ty)+)?) -> $crate::app::AppTask {
                     match (self, msg) {
-                        $((Self::$name(mode), AppModeMsg::$name(msg)) => mode.update(msg $($(, $mode_upd_arg)+)?),)+
+                        (_, AppModeMsg::Exit) => $crate::app::AppTask::done($crate::app::AppMsg::Exit),
+                        $((Self::$name(mode), AppModeMsg::$name(msg)) => mode.update(msg $($(, $mode_upd_arg)+)?).map(Into::into),)+
                         _ => {
                             tracing::trace!("[WARN] Trying to do an action for a wrong mode! (Better fix this to ensure this doesnt happen at all)");
                             AppModeTask::none()
@@ -68,6 +67,7 @@ macro_rules! app_mode {
 
             #[derive(Debug, Clone, derive_more::From)]
             pub enum AppModeMsg {
+                Exit,
                 $($name([< $name:snake >]::[< $name Msg >])),+
             }
         }
@@ -75,11 +75,9 @@ macro_rules! app_mode {
 }
 
 app_mode![
-    | all_upd: (db: Option<Arc<DB>>, config: Arc<Config>);
+    | all_upd: (config: Arc<Config>);
 
-    Apps {
-        update: (db);
-    },
+    Apps {},
     Runner {},
     Power {
         update: (config);

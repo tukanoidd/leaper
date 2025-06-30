@@ -11,15 +11,13 @@ use iced::{
     keyboard::{self, Key, key},
     widget::text_input,
 };
-use leaper_apps::AppEntry;
 use leaper_db::{DB, DBResult};
-use tracing::Instrument;
 
 use crate::{
     app::mode::{
-        AppMode, AppModeMsg,
+        AppMode, AppModeMsg, AppModeTask,
         apps::{Apps, AppsMsg},
-        power::{Power, PowerMsg},
+        power::PowerMsg,
         runner::Runner,
     },
     cli,
@@ -46,6 +44,17 @@ impl App {
     pub fn new(project_dirs: ProjectDirs, config: Config, mode: cli::AppMode) -> (Self, AppTask) {
         let db_path = project_dirs.data_local_dir().join("db");
 
+        let task = match mode {
+            cli::AppMode::Apps => {
+                let init_db_task =
+                    AppTask::perform(DB::init(db_path), |db| AppMsg::InitDB(db.map(Arc::new)));
+
+                AppTask::batch([text_input::focus(Apps::SEARCH_ID), init_db_task])
+            }
+            cli::AppMode::Runner => text_input::focus(Runner::INPUT_ID),
+            cli::AppMode::Power => AppModeTask::done(PowerMsg::ConnectZbus).map(Into::into),
+        };
+
         let res = Self {
             config: Arc::new(config),
 
@@ -54,45 +63,28 @@ impl App {
             mode: mode.into(),
         };
 
-        let task = match mode {
-            cli::AppMode::Apps => AppTask::batch([
-                text_input::focus(Apps::SEARCH_ID),
-                AppTask::perform(DB::init(db_path), |db| AppMsg::InitDB(db.map(Arc::new))),
-            ]),
-            cli::AppMode::Runner => text_input::focus(Runner::INPUT_ID),
-            cli::AppMode::Power => Task::perform(Power::zbus_connect(), |res| {
-                AppMsg::Mode(PowerMsg::ZbusConnected(res).into())
-            }),
-        };
-
         (res, task)
     }
 
     pub fn update(&mut self, message: AppMsg) -> AppTask {
         match message {
+            AppMsg::Exit => return iced::exit(),
+
             AppMsg::InitDB(db) => match db {
                 Ok(db) => {
                     self.db = Some(db.clone());
-
-                    return AppTask::perform(
-                        {
-                            let span = tracing::trace_span!("get_cached_list");
-                            async move { db.get_table::<AppEntry>().await }.instrument(span)
-                        },
-                        AppsMsg::InitApps,
-                    )
-                    .map(Into::into);
+                    return AppModeTask::done(AppsMsg::InitApps(db)).map(Into::into);
                 }
                 Err(err) => {
                     tracing::error!("Failed to initialize the database: {err}");
-                    return iced::exit();
+                    return Task::done(AppMsg::Exit);
                 }
             },
 
             AppMsg::Mode(mode_msg) => {
                 return self
                     .mode
-                    .update(mode_msg, self.db.clone(), self.config.clone())
+                    .update(mode_msg, self.config.clone())
                     .map(Into::into);
             }
 
@@ -102,7 +94,7 @@ impl App {
                 {
                     match key.as_ref() {
                         Key::Named(key::Named::Escape) | Key::Character("q" | "Q") => {
-                            return iced::exit();
+                            return Task::done(AppMsg::Exit);
                         }
 
                         Key::Named(key::Named::ArrowUp) => {
@@ -148,6 +140,8 @@ impl App {
 #[iced_layershell::to_layer_message]
 #[derive(Debug, Clone)]
 pub enum AppMsg {
+    Exit,
+
     InitDB(DBResult<Arc<DB>>),
 
     Mode(AppModeMsg),

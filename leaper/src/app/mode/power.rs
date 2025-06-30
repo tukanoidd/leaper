@@ -52,6 +52,9 @@ pub struct Power {
 impl Power {
     pub fn update(&mut self, msg: PowerMsg, config: Arc<Config>) -> AppModeTask {
         match msg {
+            PowerMsg::ConnectZbus => AppModeTask::perform(Power::zbus_connect(), |res| {
+                PowerMsg::ZbusConnected(res).into()
+            }),
             PowerMsg::ZbusConnected(connection) => match connection {
                 Ok(connection) => {
                     self.connection = Some(connection);
@@ -59,7 +62,7 @@ impl Power {
                 }
                 Err(e) => {
                     tracing::error!("{}", e);
-                    iced::exit()
+                    AppModeTask::done(AppModeMsg::Exit)
                 }
             },
 
@@ -99,7 +102,7 @@ impl Power {
                     tracing::error!("Failed to perform logind action: {err}");
                 }
 
-                iced::exit()
+                AppModeTask::done(AppModeMsg::Exit)
             }
         }
     }
@@ -198,6 +201,7 @@ impl Power {
 
 #[derive(Debug, Clone)]
 pub enum PowerMsg {
+    ConnectZbus,
     ZbusConnected(LeaperResult<Connection>),
 
     Lock,

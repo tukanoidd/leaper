@@ -17,10 +17,11 @@ use iced_fonts::{NERD_FONT, Nerd, nerd::icon_to_string};
 use itertools::Itertools;
 use leaper_apps::{AppEntry, AppsResult, search_apps};
 use leaper_db::{DB, DBResult};
+use tracing::Instrument;
 
 use crate::app::{
     AppTask,
-    mode::{AppModeElement, AppModeTask},
+    mode::{AppModeElement, AppModeMsg, AppModeTask},
     style::{app_scrollable_style, app_text_input_style},
 };
 
@@ -42,9 +43,21 @@ pub struct Apps {
 }
 
 impl Apps {
-    pub fn update(&mut self, msg: AppsMsg, db: Option<Arc<DB>>) -> AppModeTask {
+    pub fn update(&mut self, msg: AppsMsg) -> AppModeTask {
         match msg {
-            AppsMsg::InitApps(apps) => match apps {
+            AppsMsg::InitApps(db) => {
+                return AppModeTask::perform(
+                    {
+                        let db = db.clone();
+                        let span = tracing::trace_span!("get_cached_list");
+
+                        async move { db.get_table::<AppEntry>().await }.instrument(span)
+                    },
+                    move |res| AppsMsg::InitedApps(db.clone(), res),
+                )
+                .map(Into::into);
+            }
+            AppsMsg::InitedApps(db, apps) => match apps {
                 Ok(apps) => {
                     self.apps = apps;
                     self.apps.sort_by_key(|a| a.name.clone());
@@ -54,15 +67,20 @@ impl Apps {
                         self.apps.len()
                     );
 
-                    return AppTask::perform(search_apps(db.clone().unwrap()), AppsMsg::LoadApps)
-                        .map(Into::into);
+                    return AppModeTask::done(AppsMsg::LoadApps(db).into());
                 }
                 Err(err) => {
                     tracing::error!("Failed to initialize app list from cache: {err}");
-                    return iced::exit();
+                    return AppModeTask::done(AppModeMsg::Exit);
                 }
             },
-            AppsMsg::LoadApps(apps) => match apps {
+            AppsMsg::LoadApps(db) => {
+                return AppTask::perform(search_apps(db.clone()), move |res| {
+                    AppsMsg::LoadedApps(db.clone(), res)
+                })
+                .map(Into::into);
+            }
+            AppsMsg::LoadedApps(db, apps) => match apps {
                 Ok(apps) => {
                     self.apps = apps;
                     self.selected = self.selected.clamp(0, self.apps.len() - 1);
@@ -71,8 +89,7 @@ impl Apps {
                 }
                 Err(err) => {
                     tracing::error!("Failed to load new app list: {err}. Retrying...");
-                    return AppTask::perform(search_apps(db.clone().unwrap()), AppsMsg::LoadApps)
-                        .map(Into::into);
+                    return AppModeTask::done(AppsMsg::LoadApps(db).into());
                 }
             },
 
@@ -166,7 +183,7 @@ impl Apps {
                         tracing::error!("Failed to run the app {}: {err}", app.name)
                     }
 
-                    return iced::exit();
+                    return AppModeTask::done(AppModeMsg::Exit);
                 }
                 None => tracing::warn!("Logic error!"),
             },
@@ -383,8 +400,10 @@ impl Apps {
 
 #[derive(Debug, Clone)]
 pub enum AppsMsg {
-    InitApps(InitAppsIconsResult),
-    LoadApps(LoadAppsIconsResult),
+    InitApps(Arc<DB>),
+    InitedApps(Arc<DB>, InitAppsIconsResult),
+    LoadApps(Arc<DB>),
+    LoadedApps(Arc<DB>, LoadAppsIconsResult),
 
     SearchInput(String),
 
