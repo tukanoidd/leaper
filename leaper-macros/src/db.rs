@@ -2,9 +2,10 @@ use darling::{
     FromDeriveInput, FromField, FromVariant,
     ast::{Data, Fields, Style},
 };
+use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Attribute, Generics, Ident, LitStr, Type, Visibility};
+use syn::{Attribute, Generics, Ident, LitStr, Type, Visibility, spanned::Spanned};
 
 use crate::util::DeriveInputUtil;
 
@@ -36,7 +37,7 @@ impl DeriveInputUtil for DBEntry {
         let derives = quote!(#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]);
 
         let entry = self.gen_entry();
-        let (_impl_gen, ty_gen, where_gen) = generics.split_for_impl();
+        let (impl_gen, ty_gen, where_gen) = generics.split_for_impl();
 
         match data {
             Data::Enum(items) => {
@@ -55,15 +56,41 @@ impl DeriveInputUtil for DBEntry {
                 }
             }
             Data::Struct(fields) => {
-                let fields = fields.iter().map(DBEntryField::gen_field);
+                let struct_fields = fields.iter().map(DBEntryField::gen_field);
+
+                let field_name_consts =
+                    {
+                        let consts = fields.iter().enumerate().map(
+                            |(ind, DBEntryField { vis, ident, .. })| {
+                                let ident_str = ident
+                                    .as_ref()
+                                    .map(|i| i.to_string())
+                                    .unwrap_or_else(|| ind.to_string());
+                                let name =
+                                    format_ident!("FIELD_{}", ident_str.to_shouty_snake_case());
+
+                                let lit_name = LitStr::new(&ident_str, ident.span());
+
+                                quote!(#vis const #name: &'static str = #lit_name;)
+                            },
+                        );
+
+                        quote! {
+                            impl #impl_gen #ident #ty_gen #where_gen {
+                                #(#consts)*
+                            }
+                        }
+                    };
 
                 quote! {
                     #table
 
                     #derives
                     #vis struct #ident #ty_gen #where_gen {
-                        #(#fields),*
+                        #(#struct_fields),*
                     }
+
+                    #field_name_consts
 
                     #entry
                 }

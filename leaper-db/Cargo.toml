@@ -19,12 +19,14 @@ futures.workspace = true
 
 serde.workspace = true
 
+derive_more = { workspace = true, features = ["deref"] }
+
 tracing.workspace = true
 
 thiserror.workspace = true
 miette.workspace = true
 
-surrealdb = { version = "2.3.5", default-features = false, features = [
+surrealdb = { version = "2.3.6", default-features = false, features = [
   "kv-surrealkv",
 ] }
 uuid = "1.17.0"

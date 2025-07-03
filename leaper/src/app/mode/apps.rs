@@ -15,8 +15,9 @@ use iced::{
 use iced_aw::Spinner;
 use iced_fonts::{NERD_FONT, Nerd, nerd::icon_to_string};
 use itertools::Itertools;
-use leaper_apps::{AppEntry, AppsResult, search_apps};
+use leaper_apps::{AppWithIcon, AppsFinder, AppsResult};
 use leaper_db::{DB, DBResult};
+use tokio::sync::oneshot::Sender;
 use tracing::Instrument;
 
 use crate::app::{
@@ -25,10 +26,10 @@ use crate::app::{
     style::{app_scrollable_style, app_text_input_style},
 };
 
-type AppsIcons = Vec<AppEntry>;
+type AppsIcons = Vec<AppWithIcon>;
 
 type InitAppsIconsResult = DBResult<AppsIcons>;
-type LoadAppsIconsResult = AppsResult<AppsIcons>;
+type LoadAppsIconsResult = AppsResult<()>;
 
 #[derive(Default)]
 pub struct Apps {
@@ -40,24 +41,35 @@ pub struct Apps {
     selected: usize,
 
     xpm_handles: Arc<Mutex<DashMap<PathBuf, image::Handle>>>,
+
+    pub stop_search_sender: Arc<Mutex<Option<Sender<()>>>>,
 }
 
 impl Apps {
     pub fn update(&mut self, msg: AppsMsg) -> AppModeTask {
         match msg {
             AppsMsg::InitApps(db) => {
-                return AppModeTask::perform(
-                    {
-                        let db = db.clone();
-                        let span = tracing::trace_span!("get_cached_list");
+                let (apps_finder, sender) = AppsFinder::new();
 
-                        async move { db.get_table::<AppEntry>().await }.instrument(span)
-                    },
-                    move |res| AppsMsg::InitedApps(db.clone(), res),
-                )
-                .map(Into::into);
+                *self.stop_search_sender.lock().unwrap() = Some(sender);
+
+                let load_db = db.clone();
+
+                return AppModeTask::batch([
+                    AppModeTask::perform(
+                        {
+                            let db = db.clone();
+                            let span = tracing::trace_span!("get_cached_list");
+
+                            async move { db.get_table::<AppWithIcon>().await }.instrument(span)
+                        },
+                        AppsMsg::InitedApps,
+                    )
+                    .map(Into::into),
+                    AppModeTask::done(AppsMsg::LoadApps(load_db, apps_finder).into()),
+                ]);
             }
-            AppsMsg::InitedApps(db, apps) => match apps {
+            AppsMsg::InitedApps(apps) => match apps {
                 Ok(apps) => {
                     self.apps = apps;
                     self.apps.sort_by_key(|a| a.name.clone());
@@ -66,32 +78,34 @@ impl Apps {
                         "Initialized apps list from cache [{} entries]",
                         self.apps.len()
                     );
-
-                    return AppModeTask::done(AppsMsg::LoadApps(db).into());
                 }
                 Err(err) => {
                     tracing::error!("Failed to initialize app list from cache: {err}");
-                    return AppModeTask::done(AppModeMsg::Exit);
+
+                    return AppModeTask::done(AppModeMsg::Exit {
+                        app_search_stop_sender: self.stop_search_sender.clone(),
+                    });
                 }
             },
-            AppsMsg::LoadApps(db) => {
-                return AppTask::perform(search_apps(db.clone()), move |res| {
-                    AppsMsg::LoadedApps(db.clone(), res)
-                })
-                .map(Into::into);
-            }
-            AppsMsg::LoadedApps(db, apps) => match apps {
-                Ok(apps) => {
-                    self.apps = apps;
-                    self.selected = self.selected.clamp(0, self.apps.len() - 1);
 
-                    tracing::trace!("Loaded a fresh list of apps [{} entries]", self.apps.len());
+            AppsMsg::LoadApps(db, apps_finder) => {
+                return AppTask::perform(apps_finder.search(db.clone()), AppsMsg::LoadedApps)
+                    .map(Into::into);
+            }
+            AppsMsg::LoadedApps(apps) => match apps {
+                Ok(_) => {
+                    tracing::trace!("AppsFinder succeded!");
                 }
                 Err(err) => {
-                    tracing::error!("Failed to load new app list: {err}. Retrying...");
-                    return AppModeTask::done(AppsMsg::LoadApps(db).into());
+                    tracing::error!("AppsFinder errored out: {err}");
+
+                    return AppModeTask::done(AppModeMsg::Exit {
+                        app_search_stop_sender: self.stop_search_sender.clone(),
+                    });
                 }
             },
+
+            AppsMsg::AddApp(app_with_icon) => self.apps.push(app_with_icon),
 
             AppsMsg::SearchInput(new_search) => {
                 self.search = new_search;
@@ -128,7 +142,6 @@ impl Apps {
                     }
                 };
             }
-
             AppsMsg::SelectUp => {
                 self.selected = match self.apps.is_empty() {
                     true => 0,
@@ -151,7 +164,6 @@ impl Apps {
 
                 return AppTask::done(AppsMsg::ScrollToSelected).map(Into::into);
             }
-
             AppsMsg::RunSelectedApp => match self.apps.is_empty() {
                 true => {}
                 false => return AppTask::done(AppsMsg::RunApp(self.selected)).map(Into::into),
@@ -183,11 +195,12 @@ impl Apps {
                         tracing::error!("Failed to run the app {}: {err}", app.name)
                     }
 
-                    return AppModeTask::done(AppModeMsg::Exit);
+                    return AppModeTask::done(AppModeMsg::Exit {
+                        app_search_stop_sender: self.stop_search_sender.clone(),
+                    });
                 }
                 None => tracing::warn!("Logic error!"),
             },
-
             AppsMsg::ScrollToSelected => match self.apps.is_empty() {
                 true => {}
                 false => {
@@ -285,7 +298,7 @@ impl Apps {
     const APP_ENTRY_TEXT_HEIGHT: f32 = Self::APP_ENTRY_IMAGE_SIZE * 0.5;
 
     fn app_entry<'a>(
-        app: &'a AppEntry,
+        app: &'a AppWithIcon,
         ind: usize,
         selected: usize,
         xpm_handles: Arc<Mutex<DashMap<PathBuf, image::Handle>>>,
@@ -401,9 +414,11 @@ impl Apps {
 #[derive(Debug, Clone)]
 pub enum AppsMsg {
     InitApps(Arc<DB>),
-    InitedApps(Arc<DB>, InitAppsIconsResult),
-    LoadApps(Arc<DB>),
-    LoadedApps(Arc<DB>, LoadAppsIconsResult),
+    InitedApps(InitAppsIconsResult),
+    LoadApps(Arc<DB>, AppsFinder),
+    LoadedApps(LoadAppsIconsResult),
+
+    AddApp(AppWithIcon),
 
     SearchInput(String),
 

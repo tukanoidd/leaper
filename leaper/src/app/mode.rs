@@ -41,7 +41,12 @@ macro_rules! app_mode {
 
                 pub fn update(&mut self, msg: AppModeMsg $($(, $upd_arg:$upd_arg_ty)+)?) -> $crate::app::AppTask {
                     match (self, msg) {
-                        (_, AppModeMsg::Exit) => $crate::app::AppTask::done($crate::app::AppMsg::Exit),
+                        (_, AppModeMsg::Exit {
+                            app_search_stop_sender
+
+                        }) => $crate::app::AppTask::done($crate::app::AppMsg::Exit {
+                            app_search_stop_sender
+                        }),
                         $((Self::$name(mode), AppModeMsg::$name(msg)) => mode.update(msg $($(, $mode_upd_arg)+)?).map(Into::into),)+
                         _ => {
                             tracing::trace!("[WARN] Trying to do an action for a wrong mode! (Better fix this to ensure this doesnt happen at all)");
@@ -67,7 +72,9 @@ macro_rules! app_mode {
 
             #[derive(Debug, Clone, derive_more::From)]
             pub enum AppModeMsg {
-                Exit,
+                Exit {
+                    app_search_stop_sender: std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>>
+                },
                 $($name([< $name:snake >]::[< $name Msg >])),+
             }
         }

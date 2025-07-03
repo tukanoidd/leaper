@@ -1,7 +1,10 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
+};
 
-use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
-use serde::{Deserialize, Serialize};
+use derive_more::Deref;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use surrealdb::{Surreal, Uuid, engine::local::Db, method::Stream, opt::IntoEndpoint};
 use uuid::Timestamp;
 
@@ -10,10 +13,12 @@ pub use serde;
 pub use macros::db_entry;
 
 pub type DBEntryId = surrealdb::RecordId;
+pub type DBNotification<E> = surrealdb::Notification<E>;
+pub type DBAction = surrealdb::Action;
 
 pub const NAMESPACE: &str = "leaper";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deref)]
 pub struct DB {
     db: Surreal<Db>,
 }
@@ -67,7 +72,66 @@ impl DB {
         Ok(self.db.select(E::Table::NAME).await?)
     }
 
-    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
+    #[cfg_attr(
+        feature = "profile",
+        tracing::instrument(
+            skip(self),
+            level = "trace",
+            fields(
+                db_name = E::Table::DB_NAME,
+                name = E::Table::NAME
+            )
+        )
+    )]
+    pub async fn get_table_ids<E>(&self) -> DBResult<Vec<DBEntryId>>
+    where
+        E: TDBTableEntry,
+    {
+        self.use_db::<E::Table>().await?;
+        Ok(self.db.select(E::Table::NAME).await?)
+    }
+
+    #[cfg_attr(
+        feature = "profile",
+        tracing::instrument(
+            skip(self),
+            level = "trace",
+            fields(
+                db_name = E::Table::DB_NAME,
+                name = E::Table::NAME
+            )
+        )
+    )]
+    pub async fn get_table_field<E, V>(&self, name: impl Display) -> DBResult<Vec<V>>
+    where
+        E: TDBTableEntry,
+        V: DeserializeOwned,
+    {
+        self.use_db::<E::Table>().await?;
+
+        let ids = self.get_table_ids::<E>().await?;
+
+        Ok(match ids.is_empty() {
+            true => vec![],
+            false => self
+                .db
+                .query(format!("SELECT {name} FROM {}", E::Table::NAME))
+                .await?
+                .take(0)?,
+        })
+    }
+
+    #[cfg_attr(
+        feature = "profile",
+        tracing::instrument(
+            skip(self),
+            level = "trace",
+            fields(
+                db_name = E::Table::DB_NAME,
+                name = E::Table::NAME
+            )
+        )
+    )]
     pub async fn live_table<E>(&self) -> DBResult<Stream<Vec<E>>>
     where
         E: TDBTableEntry,
@@ -76,41 +140,17 @@ impl DB {
         Ok(self.db.select(E::Table::NAME).live().await?)
     }
 
-    #[cfg_attr(feature = "profile", tracing::instrument(
-        skip(self, table),
-        level = "trace",
-        fields(
-            db_name = E::Table::DB_NAME,
-            name = E::Table::NAME
+    #[cfg_attr(
+        feature = "profile",
+        tracing::instrument(
+            skip(self),
+            level = "trace",
+            fields(
+                db_name = E::Table::DB_NAME,
+                name = E::Table::NAME
+            )
         )
-    ))]
-    pub async fn set_table<E, I>(&self, table: I) -> DBResult<Vec<E>>
-    where
-        E: TDBTableEntry + 'static,
-        I: IntoIterator<Item = E>,
-    {
-        self.use_db::<E::Table>().await?;
-        self.db.delete::<Vec<E>>(E::Table::NAME).await?;
-
-        let list = table.into_iter().collect::<Vec<_>>();
-
-        list.clone()
-            .into_iter()
-            .map(|entry| {
-                let sc = self.clone();
-
-                async move { sc.new_entry::<E>(entry.clone()).await }.boxed()
-            })
-            .collect::<FuturesUnordered<_>>()
-            .collect::<Vec<_>>()
-            .await
-            .into_iter()
-            .collect::<DBResult<Vec<_>>>()?;
-
-        Ok(list)
-    }
-
-    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
+    )]
     pub async fn clear_table<E>(&self) -> DBResult<Vec<E>>
     where
         E: TDBTableEntry,
@@ -119,7 +159,17 @@ impl DB {
         Ok(self.db.delete(E::Table::NAME).await?)
     }
 
-    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
+    #[cfg_attr(
+        feature = "profile",
+        tracing::instrument(
+            skip(self),
+            level = "trace",
+            fields(
+                db_name = E::Table::DB_NAME,
+                name = E::Table::NAME
+            )
+        )
+    )]
     pub async fn entry<E>(&self, id: Uuid) -> DBResult<E>
     where
         E: TDBTableEntry,
@@ -128,7 +178,17 @@ impl DB {
         self.db.select((E::Table::NAME, id)).await?.or_not_found(id)
     }
 
-    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
+    #[cfg_attr(
+        feature = "profile",
+        tracing::instrument(
+            skip(self),
+            level = "trace",
+            fields(
+                db_name = E::Table::DB_NAME,
+                name = E::Table::NAME
+            )
+        )
+    )]
     pub async fn new_entry<E>(&self, val: impl Into<E> + Debug) -> DBResult<E>
     where
         E: TDBTableEntry + 'static,
@@ -144,7 +204,17 @@ impl DB {
             .or_failed_to_add(id.uuid())
     }
 
-    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
+    #[cfg_attr(
+        feature = "profile",
+        tracing::instrument(
+            skip(self),
+            level = "trace",
+            fields(
+                db_name = E::Table::DB_NAME,
+                name = E::Table::NAME
+            )
+        )
+    )]
     pub async fn remove_entry<E>(&self, id: Uuid) -> DBResult<E>
     where
         E: TDBTableEntry,
@@ -153,7 +223,17 @@ impl DB {
         self.db.delete((E::Table::NAME, id)).await?.or_not_found(id)
     }
 
-    #[cfg_attr(feature = "profile", tracing::instrument(skip(self), level = "trace"))]
+    #[cfg_attr(
+        feature = "profile",
+        tracing::instrument(
+            skip(self),
+            level = "trace",
+            fields(
+                db_name = E::Table::DB_NAME,
+                name = E::Table::NAME
+            )
+        )
+    )]
     pub async fn update_entry<E>(&self, id: Uuid, val: impl Into<E> + Debug) -> DBResult<E>
     where
         E: TDBTableEntry + 'static,

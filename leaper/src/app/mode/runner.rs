@@ -31,7 +31,9 @@ impl Runner {
                             match std::process::Command::new(cmd).args(split).spawn() {
                                 Ok(_) => {
                                     tracing::debug!("Command spawned successfully!");
-                                    return AppModeTask::done(AppModeMsg::Exit);
+                                    return AppModeTask::done(AppModeMsg::Exit {
+                                        app_search_stop_sender: Default::default(),
+                                    });
                                 }
                                 Err(err) => tracing::error!("Failed to run the command: {err}"),
                             }
