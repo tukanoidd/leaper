@@ -238,9 +238,12 @@ impl AppsFinder {
                         tracing::trace!("New Icons [{}]: {icon_paths:#?}!", icon_paths.len());
 
                         for icon_path in icon_paths {
-                            db.create::<Option<AppIcon>>("icons")
+                            if let Err(err) = db.create::<Option<AppIcon>>("icons")
                                 .content(AppIcon::new(icon_path)?)
-                                .await?;
+                                .await
+                            {
+                                tracing::trace!("WARN: Failed to add icon to database: {err}");
+                            }
                         }
                     }
 
@@ -261,7 +264,7 @@ impl AppsFinder {
                 tasks.join_all().await.into_iter().collect::<AppsResult<Vec<_>>>()?;
 
                 AppsResult::Ok(())
-            }.instrument(tracing::trace_span!("Icon Search Task"))
+            }.instrument(tracing::debug_span!("Icon Search Task"))
         );
 
         // Apps search
@@ -321,7 +324,7 @@ impl AppsFinder {
             }
 
             AppsResult::Ok(())
-        }.instrument(tracing::trace_span!("App Search Task")));
+        }.instrument(tracing::debug_span!("App Search Task")));
 
         unordered_search_tasks
             .join_all()
