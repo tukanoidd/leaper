@@ -70,10 +70,11 @@ macro_rules! app_mode {
                 }
             }
 
-            #[derive(Debug, Clone, derive_more::From)]
+            #[derive(derive_more::Debug, Clone, derive_more::From)]
             pub enum AppModeMsg {
                 Exit {
-                    app_search_stop_sender: std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>>
+                    #[debug(skip)]
+                    app_search_stop_sender: Option<tokio_mpmc::Sender<()>>
                 },
                 $($name([< $name:snake >]::[< $name Msg >])),+
             }

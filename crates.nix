@@ -16,9 +16,6 @@
         };
 
         leaper-macros = {};
-
-        leaper-apps = {};
-        leaper-db = {};
       };
     };
   };

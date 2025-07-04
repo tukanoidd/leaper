@@ -1,3 +1,5 @@
+pub mod search;
+
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -15,20 +17,24 @@ use iced::{
 use iced_aw::Spinner;
 use iced_fonts::{NERD_FONT, Nerd, nerd::icon_to_string};
 use itertools::Itertools;
-use leaper_apps::{AppWithIcon, AppsFinder, AppsResult};
-use leaper_db::{DB, DBResult};
-use tokio::sync::oneshot::Sender;
 use tracing::Instrument;
 
-use crate::app::{
-    AppTask,
-    mode::{AppModeElement, AppModeMsg, AppModeTask},
-    style::{app_scrollable_style, app_text_input_style},
+use crate::{
+    LeaperResult,
+    app::{
+        AppTask,
+        mode::{
+            AppModeElement, AppModeMsg, AppModeTask,
+            apps::search::{AppWithIcon, AppsFinder, AppsResult},
+        },
+        style::{app_scrollable_style, app_text_input_style},
+    },
+    db::DB,
 };
 
 type AppsIcons = Vec<AppWithIcon>;
 
-type InitAppsIconsResult = DBResult<AppsIcons>;
+type InitAppsIconsResult = LeaperResult<AppsIcons>;
 type LoadAppsIconsResult = AppsResult<()>;
 
 #[derive(Default)]
@@ -42,7 +48,7 @@ pub struct Apps {
 
     xpm_handles: Arc<Mutex<DashMap<PathBuf, image::Handle>>>,
 
-    pub stop_search_sender: Arc<Mutex<Option<Sender<()>>>>,
+    pub stop_search_sender: Option<tokio_mpmc::Sender<()>>,
 }
 
 impl Apps {
@@ -51,7 +57,7 @@ impl Apps {
             AppsMsg::InitApps(db) => {
                 let (apps_finder, sender) = AppsFinder::new();
 
-                *self.stop_search_sender.lock().unwrap() = Some(sender);
+                self.stop_search_sender = Some(sender);
 
                 let load_db = db.clone();
 
@@ -62,8 +68,16 @@ impl Apps {
                             let span = tracing::trace_span!("get_cached_list");
 
                             async move {
-                                db.get_table_fetch::<AppWithIcon, _>([AppWithIcon::FIELD_ICON])
-                                    .await
+                                Ok(db
+                                    .query(
+                                        "
+                                        SELECT * FROM entries
+                                            ORDER BY name ASC
+                                            FETCH icon
+                                        ",
+                                    )
+                                    .await?
+                                    .take(0)?)
                             }
                             .instrument(span)
                         },
@@ -76,7 +90,6 @@ impl Apps {
             AppsMsg::InitedApps(apps) => match apps {
                 Ok(apps) => {
                     self.apps = apps;
-                    self.apps.sort_by_key(|a| a.name.clone());
 
                     tracing::trace!(
                         "Initialized apps list from cache [{} entries]",
@@ -109,7 +122,23 @@ impl Apps {
                 }
             },
 
-            AppsMsg::AddApp(app_with_icon) => self.apps.push(app_with_icon),
+            AppsMsg::AddApp(app_with_icon) => {
+                let existing_ind = self
+                    .apps
+                    .iter()
+                    .enumerate()
+                    .find_map(|(ind, app)| (app.id == app_with_icon.id).then_some(ind));
+
+                match existing_ind {
+                    Some(ind) => {
+                        self.apps[ind] = app_with_icon;
+                    }
+                    None => {
+                        self.apps.push(app_with_icon);
+                        self.apps.sort_by_key(|x| x.name.clone());
+                    }
+                }
+            }
 
             AppsMsg::SearchInput(new_search) => {
                 self.search = new_search;

@@ -1,11 +1,13 @@
 mod app;
 mod cli;
 mod config;
+mod db;
 
 use std::sync::Arc;
 
 use clap::Parser;
 use directories::ProjectDirs;
+use iced::Executor;
 use iced_aw::iced_fonts::REQUIRED_FONT_BYTES;
 use iced_fonts::NERD_FONT_BYTES;
 use iced_layershell::{
@@ -77,6 +79,7 @@ fn main() -> LeaperResult<()> {
         .subscription(App::subscription)
         .font(REQUIRED_FONT_BYTES)
         .font(NERD_FONT_BYTES)
+        .executor::<LeaperRuntime>()
         .run_with(move || {
             App::builder()
                 .project_dirs(project_dirs)
@@ -86,6 +89,33 @@ fn main() -> LeaperResult<()> {
         })?;
 
     Ok(())
+}
+
+struct LeaperRuntime(tokio::runtime::Runtime);
+
+impl Executor for LeaperRuntime {
+    fn new() -> Result<Self, futures::io::Error>
+    where
+        Self: Sized,
+    {
+        Ok(Self(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_stack_size(10 * 1024 * 1024)
+                .build()?,
+        ))
+    }
+
+    fn spawn(
+        &self,
+        future: impl Future<Output = ()> + iced::advanced::graphics::futures::MaybeSend + 'static,
+    ) {
+        <tokio::runtime::Runtime as Executor>::spawn(&self.0, future)
+    }
+
+    fn enter<R>(&self, f: impl FnOnce() -> R) -> R {
+        <tokio::runtime::Runtime as Executor>::enter(&self.0, f)
+    }
 }
 
 fn init_tracing(trace: bool, debug: bool) -> LeaperResult<()> {
@@ -101,7 +131,7 @@ fn init_tracing(trace: bool, debug: bool) -> LeaperResult<()> {
         .with(
             tracing_subscriber::fmt::layer()
                 .pretty()
-                .with_span_events(FmtSpan::CLOSE),
+                .with_span_events(FmtSpan::CLOSE | FmtSpan::NEW),
         )
         .with(tracing_subscriber::EnvFilter::new(directives));
 
@@ -141,4 +171,12 @@ enum LeaperError {
 
     #[lerr(str = "Failed to connect to session bus: {0}")]
     ZBus(#[lerr(from)] zbus::Error),
+
+    #[lerr(str = "[surrealdb] {0}")]
+    Surreal(#[lerr(from, wrap = Arc)] surrealdb::Error),
+    #[lerr(str = "[surrealdb_extras] {0}")]
+    SurrealExtra(String),
+
+    #[lerr(str = "[tokio::mpmc::channel] {0}")]
+    TokioMPMCChannel(#[lerr(from, wrap = Arc)] tokio_mpmc::ChannelError),
 }

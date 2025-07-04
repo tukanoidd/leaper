@@ -1,9 +1,9 @@
-mod mode;
+pub mod mode;
 
 mod style;
 mod types;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use directories::ProjectDirs;
 use iced::{
@@ -13,19 +13,19 @@ use iced::{
     stream,
     widget::text_input,
 };
-use leaper_apps::AppWithIcon;
-use leaper_db::{DB, DBAction, DBResult};
-use tokio::sync::oneshot::Sender;
+use surrealdb::Notification;
 
 use crate::{
+    LeaperResult,
     app::mode::{
         AppMode, AppModeMsg, AppModeTask,
-        apps::{Apps, AppsMsg},
+        apps::{Apps, AppsMsg, search::AppWithIcon},
         power::PowerMsg,
         runner::Runner,
     },
     cli,
     config::Config,
+    db::{DB, init_db},
 };
 
 pub type AppTheme = iced::Theme;
@@ -47,15 +47,17 @@ impl App {
     #[builder]
     pub fn new(project_dirs: ProjectDirs, config: Config, mode: cli::AppMode) -> (Self, AppTask) {
         #[cfg(feature = "db-websocket")]
-        let db_path = "localhost:8000";
-
-        #[cfg(not(feature = "db-websocket"))]
-        let db_path = project_dirs.data_local_dir().join("db");
+        let _project_dirs = project_dirs;
 
         let task = match mode {
             cli::AppMode::Apps => {
-                let init_db_task =
-                    AppTask::perform(DB::init(db_path), |db| AppMsg::InitDB(db.map(Arc::new)));
+                let init_db_task = AppTask::perform(
+                    init_db(
+                        #[cfg(not(feature = "db-websocket"))]
+                        project_dirs,
+                    ),
+                    AppMsg::InitDB,
+                );
 
                 AppTask::batch([text_input::focus(Apps::SEARCH_ID), init_db_task])
             }
@@ -77,25 +79,23 @@ impl App {
     pub fn update(&mut self, message: AppMsg) -> AppTask {
         match message {
             AppMsg::Exit {
-                app_search_stop_sender,
+                mut app_search_stop_sender,
             } => {
-                match app_search_stop_sender.lock() {
-                    Ok(mut sender) => {
-                        if let Some(sender) = sender.take() {
-                            match sender.send(()) {
-                                Ok(_) => tracing::debug!("Sent close message to apps finder"),
-                                Err(_) => {
-                                    tracing::debug!("Failed to send stop message to apps finder!")
-                                }
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        tracing::error!("Failed to lock app search stop sender: {err}");
-                    }
-                }
+                let stop_task = app_search_stop_sender.take().map(|sender| {
+                    Task::perform(
+                        async move {
+                            sender.send(()).await?;
 
-                return iced::exit();
+                            Ok(())
+                        },
+                        AppMsg::Result,
+                    )
+                });
+
+                return match stop_task {
+                    Some(stop_task) => Task::batch([stop_task, iced::exit()]),
+                    None => iced::exit(),
+                };
             }
 
             AppMsg::InitDB(db) => match db {
@@ -150,6 +150,12 @@ impl App {
                 }
             }
 
+            AppMsg::Result(result) => {
+                if let Err(result) = result {
+                    tracing::error!("{result}");
+                }
+            }
+
             AppMsg::AnchorChange(_)
             | AppMsg::SetInputRegion(_)
             | AppMsg::AnchorSizeChange(_, _)
@@ -188,14 +194,17 @@ impl App {
                         "live_apps",
                         stream::channel(1, |mut msg_sender| async move {
                             match db
-                                .live_table_fetch::<AppWithIcon, _>([AppWithIcon::FIELD_ICON])
+                                .query("LIVE SELECT * FROM entries FETCH icon")
                                 .await
+                                .expect("Should be able to get live stream from app entries table")
+                                .stream::<Notification<AppWithIcon>>(0)
                             {
                                 Ok(mut stream) => {
                                     while let Some(notification) = stream.next().await {
                                         match notification {
                                             Ok(notification) => match notification.action {
-                                                DBAction::Create => {
+                                                surrealdb::Action::Create
+                                                | surrealdb::Action::Update => {
                                                     if let Err(err) = msg_sender
                                                         .send(
                                                             AppModeMsg::Apps(AppsMsg::AddApp(
@@ -268,15 +277,18 @@ impl App {
 }
 
 #[iced_layershell::to_layer_message]
-#[derive(Debug, Clone)]
+#[derive(derive_more::Debug, Clone)]
 pub enum AppMsg {
     Exit {
-        app_search_stop_sender: Arc<Mutex<Option<Sender<()>>>>,
+        #[debug(skip)]
+        app_search_stop_sender: Option<tokio_mpmc::Sender<()>>,
     },
 
-    InitDB(DBResult<Arc<DB>>),
+    InitDB(LeaperResult<Arc<DB>>),
 
     Mode(AppModeMsg),
 
     IcedEvent(Event),
+
+    Result(LeaperResult<()>),
 }
