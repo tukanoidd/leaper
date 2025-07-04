@@ -61,7 +61,11 @@ impl Apps {
                             let db = db.clone();
                             let span = tracing::trace_span!("get_cached_list");
 
-                            async move { db.get_table::<AppWithIcon>().await }.instrument(span)
+                            async move {
+                                db.get_table_fetch::<AppWithIcon, _>([AppWithIcon::FIELD_ICON])
+                                    .await
+                            }
+                            .instrument(span)
                         },
                         AppsMsg::InitedApps,
                     )
@@ -304,7 +308,7 @@ impl Apps {
         xpm_handles: Arc<Mutex<DashMap<PathBuf, image::Handle>>>,
     ) -> AppModeElement<'a> {
         let r = match &app.icon {
-            Some(icon) => match icon.svg {
+            Some( icon) => match icon.svg {
                 true => row![
                     svg(&icon.path)
                         .width(Self::APP_ENTRY_IMAGE_SIZE)

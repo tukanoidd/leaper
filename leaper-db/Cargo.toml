@@ -10,6 +10,7 @@ homepage.workspace = true
 [features]
 default = []
 profile = []
+websocket = ["surrealdb/protocol-ws"]
 
 [dependencies]
 macros = { path = "../leaper-macros", package = "leaper-macros" }
@@ -30,3 +31,4 @@ surrealdb = { version = "2.3.6", default-features = false, features = [
   "kv-surrealkv",
 ] }
 uuid = "1.17.0"
+serde_json = "1.0.140"

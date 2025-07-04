@@ -118,6 +118,7 @@ struct LErrorField {
     ident: Option<Ident>,
     ty: Type,
     from: Flag,
+    backtrace: Flag,
     wrap: Option<Path>,
 }
 
@@ -128,6 +129,7 @@ impl LErrorField {
             ident,
             ty,
             wrap,
+            backtrace,
             ..
         } = self;
 
@@ -136,8 +138,10 @@ impl LErrorField {
             Some(wrap) => quote!(#wrap<#ty>),
             None => quote!(#ty),
         };
+        let backtrace = backtrace.is_present().then(|| quote!(#[backtrace]));
 
         quote! {
+            #backtrace
             #vis #name #ty
         }
     }

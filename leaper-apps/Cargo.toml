@@ -30,7 +30,6 @@ serde.workspace = true
 thiserror.workspace = true
 miette.workspace = true
 
-async-walkdir = "2.1.0"
 walkdir = "2.5.0"
 image = "0.25.6"
 

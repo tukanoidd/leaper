@@ -46,6 +46,10 @@ pub struct App {
 impl App {
     #[builder]
     pub fn new(project_dirs: ProjectDirs, config: Config, mode: cli::AppMode) -> (Self, AppTask) {
+        #[cfg(feature = "db-websocket")]
+        let db_path = "localhost:8000";
+
+        #[cfg(not(feature = "db-websocket"))]
         let db_path = project_dirs.data_local_dir().join("db");
 
         let task = match mode {
@@ -183,7 +187,10 @@ impl App {
                     AppSubscription::run_with_id(
                         "live_apps",
                         stream::channel(1, |mut msg_sender| async move {
-                            match db.live_table::<AppWithIcon>().await {
+                            match db
+                                .live_table_fetch::<AppWithIcon, _>([AppWithIcon::FIELD_ICON])
+                                .await
+                            {
                                 Ok(mut stream) => {
                                     while let Some(notification) = stream.next().await {
                                         match notification {

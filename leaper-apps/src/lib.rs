@@ -3,9 +3,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use async_walkdir::{Filtering, WalkDir};
 use freedesktop_desktop_entry::DesktopEntry;
-use futures::{StreamExt, TryStreamExt, stream};
 use icon_cache::file::OwnedIconCache;
 use itertools::Itertools;
 use nom::{
@@ -21,6 +19,7 @@ use tokio::sync::{
     Mutex,
     oneshot::{self, Receiver, Sender},
 };
+use walkdir::WalkDir;
 
 use leaper_db::{DB, DBEntryId};
 use macros::{db_entry, lerror};
@@ -97,10 +96,9 @@ impl AppsFinder {
 
         tracing::debug!("Getting cached icon paths...");
 
-        let cached_icon_paths = Arc::new(
-            db.get_table_field::<AppIcon, PathBuf>(AppIcon::FIELD_PATH)
-                .await?,
-        );
+        let cached_icon_paths = db
+            .get_table_field::<AppIcon, PathBuf>(AppIcon::FIELD_PATH)
+            .await?;
 
         tracing::debug!("Cached icon paths: {}", cached_icon_paths.len());
 
@@ -110,127 +108,99 @@ impl AppsFinder {
 
         let icon_caches_dirs = icon_search_paths
             .iter()
-            .map(|icon_search_path| {
-                WalkDir::new(icon_search_path).filter(move |entry| async move {
-                    let path = entry.path();
+            .flat_map(|icon_search_path| {
+                WalkDir::new(icon_search_path)
+                    .min_depth(1)
+                    .max_depth(5)
+                    .into_iter()
+                    .filter_entry(move |entry| {
+                        let path = entry.path();
 
-                    if path.file_name().and_then(|s| s.to_str()) != Some("icon-theme.cache") {
-                        return Filtering::Ignore;
-                    }
+                        if path.file_name().and_then(|s| s.to_str()) != Some("icon-theme.cache") {
+                            return false;
+                        }
 
-                    Filtering::Continue
-                })
+                        true
+                    })
             })
             .collect_vec();
 
-        for mut dir in icon_caches_dirs {
-            while let Some(entry) = dir.next().await {
-                check_stop!();
+        macro_rules! maybe_add {
+            ($walkdir:expr => $which:ty $(; ($($arg:expr),+ $(,)?))?) => {
+                for entry in $walkdir {
+                    check_stop!();
 
-                let path = entry?.path();
+                    let entry = entry?;
+                    let path = entry.path();
 
-                let icon_cache = OwnedIconCache::open(&path)?;
-                let icon_cache_ref = icon_cache
-                    .icon_cache()
-                    .map_err(|e| AppsError::Dynamic(e.to_string()))?;
-
-                let img_dirs_list = icon_cache_ref
-                    .iter()
-                    .flat_map(|icon| {
-                        icon.image_list
-                            .iter()
-                            .map(|img| img.directory.to_path_buf())
-                            .collect_vec()
-                    })
-                    .collect_vec();
-
-                for img_dir in img_dirs_list {
-                    let dir = match img_dir.is_relative() {
-                        true => path.parent().unwrap().join(img_dir),
-                        false => img_dir.to_path_buf(),
-                    };
-
-                    let mut walkdir = WalkDir::new(dir).filter({
-                        let icon_cache_paths = cached_icon_paths.clone();
-
-                        move |entry| {
-                            let value = icon_cache_paths.clone();
-
-                            async move {
-                                let path = entry.path();
-
-                                if value.contains(&path) {
-                                    return Filtering::Ignore;
+                    match path.is_dir() {
+                        true => continue,
+                        false => {
+                            let value = match <$which>::new(path $(, $($arg),+)?) {
+                                Ok(val) => val,
+                                Err(err) => {
+                                    tracing::error!("{err}");
+                                    continue;
                                 }
-
-                                let Some(ext) = path.extension() else {
-                                    return Filtering::Ignore;
-                                };
-
-                                let ext = ext.to_string_lossy().to_string().to_lowercase();
-
-                                if !image::ImageFormat::all()
-                                    .flat_map(|f| f.extensions_str())
-                                    .chain([&"svg", &"xpm"])
-                                    .map(|s| s.to_lowercase())
-                                    .unique()
-                                    .any(|e| e == ext)
-                                {
-                                    return Filtering::Ignore;
-                                }
-
-                                Filtering::Continue
-                            }
+                            };
+                            tracing::debug!(
+                                "Adding entry {value:?} to table {}",
+                                <<$which as leaper_db::TDBTableEntry>::Table as leaper_db::DBTable>::NAME
+                            );
+                            let _ = db.new_entry::<$which>(value).await?;
                         }
-                    });
-
-                    while let Some(entry) = walkdir.next().await {
-                        check_stop!();
-                        db.new_entry::<AppIcon>(AppIcon::new(entry?.path())?)
-                            .await?;
                     }
                 }
+            };
+        }
+
+        for entry in icon_caches_dirs {
+            check_stop!();
+
+            let entry = entry?;
+            let path = entry.path();
+
+            let icon_cache = OwnedIconCache::open(path)?;
+            let icon_cache_ref = icon_cache
+                .icon_cache()
+                .map_err(|e| AppsError::Dynamic(e.to_string()))?;
+
+            let img_dirs_list = icon_cache_ref
+                .iter()
+                .flat_map(|icon| {
+                    icon.image_list
+                        .iter()
+                        .map(|img| img.directory.to_path_buf())
+                        .collect_vec()
+                })
+                .collect_vec();
+
+            for img_dir in img_dirs_list {
+                let dir = match img_dir.is_relative() {
+                    true => path.parent().unwrap().join(img_dir),
+                    false => img_dir.to_path_buf(),
+                };
+
+                let walkdir = WalkDir::new(dir)
+                    .min_depth(1)
+                    .max_depth(5)
+                    .into_iter()
+                    .filter_entry(|e| Self::filter_image_entry(e, &cached_icon_paths));
+
+                maybe_add!(walkdir => AppIcon);
             }
         }
 
         for icon_search_path in icon_search_paths {
             let cached_icon_paths = cached_icon_paths.clone();
 
-            let mut walkdir = WalkDir::new(icon_search_path).filter(move |entry| {
-                let cached_icon_paths = cached_icon_paths.clone();
+            let walkdir = WalkDir::new(icon_search_path)
+                .min_depth(1)
+                .max_depth(5)
+                .into_iter()
+                .filter_entry(|e| Self::filter_image_entry(e, &cached_icon_paths));
 
-                async move {
-                    let path = entry.path();
-
-                    if cached_icon_paths.contains(&path) {
-                        return Filtering::Ignore;
-                    }
-
-                    let Some(ext) = path.extension() else {
-                        return Filtering::Ignore;
-                    };
-
-                    let ext = ext.to_string_lossy().to_string().to_lowercase();
-
-                    if !image::ImageFormat::all()
-                        .flat_map(|f| f.extensions_str())
-                        .chain([&"svg", &"xpm"])
-                        .map(|s| s.to_lowercase())
-                        .unique()
-                        .any(|e| e == ext)
-                    {
-                        return Filtering::Ignore;
-                    }
-
-                    Filtering::Continue
-                }
-            });
-
-            while let Some(entry) = walkdir.next().await {
-                check_stop!();
-                db.new_entry::<AppIcon>(AppIcon::new(entry?.path())?)
-                    .await?;
-            }
+            maybe_add!(walkdir => AppIcon);
         }
 
         tracing::debug!("Done searching for new icons");
@@ -254,7 +224,7 @@ impl AppsFinder {
 
         tracing::debug!("Getting cached icons with ids...");
 
-        let cached_icons_with_id = Arc::new(db.get_table::<AppIconWithId>().await?);
+        let cached_icons_with_id = db.get_table::<AppIconWithId>().await?;
 
         tracing::debug!("Cached icons with ids: {}", cached_icons_with_id.len());
 
@@ -276,38 +246,67 @@ impl AppsFinder {
         for app_search_path in app_search_paths {
             let cached_app_paths = cached_app_paths.clone();
 
-            let mut walkdir = WalkDir::new(app_search_path).filter(move |entry| {
-                let cached_app_paths = cached_app_paths.clone();
+            let walkdir = WalkDir::new(app_search_path)
+                .min_depth(1)
+                .max_depth(10)
+                .into_iter()
+                .filter_entry(|entry| {
+                    let path = entry.path().to_path_buf();
 
-                async move {
-                    let path = entry.path();
+                    if path.is_dir() {
+                        return true;
+                    }
 
                     if cached_app_paths.contains(&path) {
-                        return Filtering::Ignore;
+                        return false;
                     }
 
                     let Some(ext) = path.extension() else {
-                        return Filtering::Ignore;
+                        return false;
                     };
 
                     if ext != "desktop" {
-                        return Filtering::Ignore;
+                        return false;
                     }
 
-                    Filtering::Continue
-                }
-            });
+                    true
+                });
 
-            while let Some(entry) = walkdir.next().await {
-                check_stop!();
-                db.new_entry::<App>(App::new(entry?.path(), cached_icons_with_id.clone())?)
-                    .await?;
-            }
+            maybe_add!(walkdir => App; (&cached_icons_with_id));
         }
 
         tracing::debug!("Done searching for new apps");
 
         Ok(())
+    }
+    fn filter_image_entry(entry: &walkdir::DirEntry, cached_icon_paths: &[PathBuf]) -> bool {
+        let path = entry.path().to_path_buf();
+
+        if path.is_dir() {
+            return true;
+        }
+
+        if cached_icon_paths.contains(&path) {
+            return false;
+        }
+
+        let Some(ext) = path.extension() else {
+            return false;
+        };
+
+        let ext = ext.to_string_lossy().to_string().to_lowercase();
+
+        if !image::ImageFormat::all()
+            .flat_map(|f| f.extensions_str())
+            .chain([&"svg", &"xpm"])
+            .map(|s| s.to_lowercase())
+            .unique()
+            .any(|e| e == ext)
+        {
+            return false;
+        }
+
+        true
     }
 }
 
@@ -321,7 +320,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(path: impl AsRef<Path>, cached_icons: Arc<Vec<AppIconWithId>>) -> AppsResult<Self> {
+    pub fn new(path: impl AsRef<Path>, cached_icons: &[AppIconWithId]) -> AppsResult<Self> {
         let path = path.as_ref();
         let entry = DesktopEntry::from_path::<&str>(path, None)?;
         let name = entry
@@ -359,6 +358,7 @@ pub struct AppWithIcon {
     pub desktop_entry_path: PathBuf,
     pub name: String,
     pub exec: Vec<String>,
+    #[serde(default)]
     pub icon: Option<AppIcon>,
 }
 
@@ -481,8 +481,8 @@ pub enum AppsError {
     #[lerr(str = "{0}")]
     DB(#[lerr(from)] leaper_db::DBError),
 
-    #[lerr(str = "[async_walkdir] {0}")]
-    AsyncWalkDir(#[lerr(from, wrap = Arc)] async_walkdir::Error),
+    #[lerr(str = "[walkdir] {0}")]
+    WalkDir(#[lerr(from, wrap = Arc)] walkdir::Error),
 
     #[lerr(str = "[image] {0}")]
     Image(#[lerr(from, wrap = Arc)] image::ImageError),

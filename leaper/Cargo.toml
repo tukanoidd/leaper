@@ -10,6 +10,7 @@ homepage.workspace = true
 [features]
 default = []
 profile = ["leaper-db/profile", "leaper-apps/profile", "tracing-tracy"]
+db-websocket = ["leaper-db/websocket"]
 
 [dependencies]
 leaper-db.path = "../leaper-db"
