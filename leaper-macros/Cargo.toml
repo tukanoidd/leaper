@@ -17,4 +17,6 @@ proc-macro2 = { version = "1.0.95", features = ["nightly", "span-locations"] }
 quote = "1.0.40"
 syn = "2.0.104"
 
+surrealdb.workspace = true
+
 heck.workspace = true

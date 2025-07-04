@@ -1,3 +1,5 @@
+pub mod apps;
+
 use std::sync::Arc;
 
 #[cfg(not(feature = "db-websocket"))]
@@ -8,7 +10,7 @@ use surrealdb_extras::{SurrealTableInfo, use_ns_db};
 
 use crate::{
     LeaperError, LeaperResult,
-    app::mode::apps::search::{AppEntry, AppIcon},
+    db::apps::{AppEntry, AppIcon},
 };
 
 #[cfg(not(feature = "db-websocket"))]

@@ -3654,6 +3654,7 @@ dependencies = [
  "manyhow",
  "proc-macro2",
  "quote",
+ "surrealdb",
  "syn 2.0.104",
 ]
 

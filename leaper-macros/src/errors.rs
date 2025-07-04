@@ -20,7 +20,7 @@ pub struct LError {
 }
 
 impl DeriveInputUtil for LError {
-    fn gen_(&self) -> TokenStream {
+    fn gen_(&self) -> manyhow::Result<TokenStream> {
         let Self {
             vis,
             ident,
@@ -41,7 +41,7 @@ impl DeriveInputUtil for LError {
             .as_ref()
             .map(|ty| quote! { #vis type #ty<T> = Result<T, #ident>; });
 
-        quote! {
+        Ok(quote! {
             #[derive(Debug, Clone, thiserror::Error, miette::Diagnostic)]
             #vis enum #ident {
                 #(#enum_vars),*
@@ -50,7 +50,7 @@ impl DeriveInputUtil for LError {
             #(#froms)*
 
             #result_ty
-        }
+        })
     }
 }
 

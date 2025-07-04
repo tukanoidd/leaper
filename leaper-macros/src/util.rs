@@ -9,5 +9,5 @@ pub trait DeriveInputUtil: FromDeriveInput {
         Ok(res)
     }
 
-    fn gen_(&self) -> TokenStream;
+    fn gen_(&self) -> manyhow::Result<TokenStream>;
 }

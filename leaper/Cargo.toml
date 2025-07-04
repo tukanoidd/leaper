@@ -15,6 +15,8 @@ db-websocket = ["surrealdb/protocol-ws"]
 [dependencies]
 macros = { path = "../leaper-macros", package = "leaper-macros" }
 
+surrealdb = { workspace = true, features = ["allocator"] }
+
 heck.workspace = true
 
 iced = { version = "0.13", features = ["tokio", "image", "svg", "advanced"] }
@@ -26,9 +28,6 @@ iced_fonts = { version = "0.2.1", features = ["nerd"] }
 
 clap = { version = "4.5.40", features = ["derive"] }
 
-surrealdb = { version = "2.3.6", default-features = false, features = [
-  "allocator",
-] }
 surrealdb-extras = "2.0.10"
 
 tokio = "1.46"

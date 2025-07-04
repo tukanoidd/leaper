@@ -19,13 +19,13 @@ use crate::{
     LeaperResult,
     app::mode::{
         AppMode, AppModeMsg, AppModeTask,
-        apps::{Apps, AppsMsg, search::AppWithIcon},
+        apps::{Apps, AppsMsg},
         power::PowerMsg,
         runner::Runner,
     },
     cli,
     config::Config,
-    db::{DB, init_db},
+    db::{DB, apps::AppWithIcon, init_db},
 };
 
 pub type AppTheme = iced::Theme;

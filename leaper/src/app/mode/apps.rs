@@ -25,11 +25,11 @@ use crate::{
         AppTask,
         mode::{
             AppModeElement, AppModeMsg, AppModeTask,
-            apps::search::{AppWithIcon, AppsFinder, AppsResult},
+            apps::search::{AppsFinder, AppsResult},
         },
         style::{app_scrollable_style, app_text_input_style},
     },
-    db::DB,
+    db::{DB, apps::AppWithIcon},
 };
 
 type AppsIcons = Vec<AppWithIcon>;
