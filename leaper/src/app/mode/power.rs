@@ -62,7 +62,9 @@ impl Power {
                 }
                 Err(e) => {
                     tracing::error!("{}", e);
-                    AppModeTask::done(AppModeMsg::Exit)
+                    AppModeTask::done(AppModeMsg::Exit {
+                        app_search_stop_sender: Default::default(),
+                    })
                 }
             },
 
@@ -102,7 +104,9 @@ impl Power {
                     tracing::error!("Failed to perform logind action: {err}");
                 }
 
-                AppModeTask::done(AppModeMsg::Exit)
+                AppModeTask::done(AppModeMsg::Exit {
+                    app_search_stop_sender: Default::default(),
+                })
             }
         }
     }
