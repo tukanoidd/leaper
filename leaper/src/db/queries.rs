@@ -20,7 +20,7 @@ pub struct RelateQuery {
     in_: RecordId,
     #[builder(into)]
     #[var(sql = "{}->")]
-    table: String,
+    table: surrealdb::sql::Table,
     #[builder(into)]
     #[var(sql = "{}")]
     out: RecordId,
@@ -31,5 +31,5 @@ pub struct RelateQuery {
 pub struct CreateEmptyIdQuery {
     #[builder(into)]
     #[var(sql = "(CREATE {}).id")]
-    table: String,
+    table: surrealdb::sql::Table,
 }
