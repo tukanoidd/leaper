@@ -255,7 +255,7 @@ impl AppsFinder {
                 tasks.join_all().await.into_iter().collect::<AppsResult<Vec<_>>>()?;
 
                 AppsResult::Ok(())
-            }.instrument(tracing::debug_span!("Icon Search Task"))
+            }.instrument(tracing::trace_span!("Icon Search Task"))
         );
 
         // Apps search
@@ -284,7 +284,7 @@ impl AppsFinder {
                     }
 
                     if !value::from_value::<bool>(db
-                        .query("RETURN (array::is_empty(SELECT VALUE id FROM entries WHERE desktop_entry_path = $path))")
+                        .query("RETURN (array::is_empty(SELECT VALUE id FROM apps WHERE desktop_entry_path = $path))")
                         .bind(("path", path.to_path_buf()))
                         .await?
                         .take(0)?)?
@@ -298,7 +298,7 @@ impl AppsFinder {
                         match AppEntry::new(path) {
                             Ok(entry) => {
                                 if let Err(err)=   db
-                                    .create::<Option<AppEntry>>("entries")
+                                    .create::<Option<AppEntry>>("apps")
                                     .content(entry)
                                     .await
                                 {
@@ -315,7 +315,7 @@ impl AppsFinder {
             }
 
             AppsResult::Ok(())
-        }.instrument(tracing::debug_span!("App Search Task")));
+        }.instrument(tracing::trace_span!("App Search Task")));
 
         unordered_search_tasks
             .join_all()

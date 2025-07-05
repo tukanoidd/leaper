@@ -18,12 +18,12 @@ use crate::app::mode::apps::search::{AppsError, AppsResult};
 
 #[db_table]
 #[table(
-    db = entries,
+    db = apps,
     sql(
-        "DEFINE INDEX app_dep_ind ON TABLE entries COLUMNS desktop_entry_path UNIQUE",
-        "DEFINE INDEX app_name_ind ON TABLE entries COLUMNS name UNIQUE",
+        "DEFINE INDEX app_dep_ind ON TABLE apps COLUMNS desktop_entry_path UNIQUE",
+        "DEFINE INDEX app_name_ind ON TABLE apps COLUMNS name UNIQUE",
         "
-        DEFINE EVENT app_entry_added ON TABLE entries
+        DEFINE EVENT app_entry_added ON TABLE apps
             WHEN $event = \"CREATE\" && $after.icon_name != NULL
             THEN (
                 UPDATE $after.id SET icon = (SELECT VALUE id FROM ONLY icons
@@ -90,7 +90,7 @@ pub struct AppWithIcon {
         DEFINE EVENT icon_added ON TABLE icons
             WHEN $event = \"CREATE\"
             THEN (
-                UPDATE entries SET icon = $value.id WHERE icon_name = $value.name
+                UPDATE apps SET icon = $value.id WHERE icon_name = $value.name
             )
         "
     )

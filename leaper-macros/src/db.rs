@@ -2,6 +2,7 @@ use darling::{FromDeriveInput, FromField, ast::Data, util::Ignored};
 use manyhow::Emitter;
 use proc_macro2::TokenStream;
 use quote::quote;
+use surrealdb_core::dbs::{Capabilities, capabilities::Targets};
 use syn::{Attribute, Generics, Ident, LitStr, Type, Visibility};
 
 use crate::DeriveInputUtil;
@@ -15,7 +16,7 @@ pub struct DBTable {
     data: Data<Ignored, DBTableField>,
     attrs: Vec<Attribute>,
 
-    sql: Vec<LitStr>,
+    sql: Option<Vec<LitStr>>,
     db: Ident,
 }
 
@@ -46,28 +47,36 @@ impl DeriveInputUtil for DBTable {
 
         let mut emitter = Emitter::new();
 
-        let sql = sql
-            .iter()
-            .flat_map(|sql_lit_str| {
-                let sql_str = sql_lit_str.value();
-                let sql_parse_result = surrealdb::sql::parse(&sql_str);
+        let mut capabilities = Capabilities::all();
+        *capabilities.allowed_experimental_features_mut() = Targets::All;
 
-                match sql_parse_result {
-                    Ok(_) => Some(sql_lit_str),
-                    Err(err) => {
-                        emitter.emit(manyhow::error_message!(sql_lit_str.span(), "{err}"));
-                        None
+        let sql = sql.as_ref().map(|sql| {
+            let list = sql
+                .iter()
+                .flat_map(|sql_lit_str| {
+                    let sql_str = sql_lit_str.value();
+                    let sql_parse_result =
+                        surrealdb_core::syn::parse_with_capabilities(&sql_str, &capabilities);
+
+                    match sql_parse_result {
+                        Ok(_) => Some(sql_lit_str),
+                        Err(err) => {
+                            emitter.emit(manyhow::error_message!(sql_lit_str.span(), "{err}"));
+                            None
+                        }
                     }
-                }
-            })
-            .collect::<Vec<_>>();
+                })
+                .collect::<Vec<_>>();
+
+            quote!(#[sql([#(#list),*])])
+        });
 
         emitter.into_result().map(|_| {
             quote! {
                 #[derive(Debug, Clone, surrealdb_extras::SurrealTable, serde::Serialize, serde::Deserialize)]
                 #(#attrs)*
                 #[db(#db)]
-                #[sql([#(#sql),*])]
+                #sql
                 #vis struct #ident #ty_gen #where_gen {
                     #(#struct_fields),*
                 }

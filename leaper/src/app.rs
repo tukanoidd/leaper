@@ -194,9 +194,9 @@ impl App {
                         "live_apps",
                         stream::channel(1, |mut msg_sender| async move {
                             match db
-                                .query("LIVE SELECT * FROM entries FETCH icon")
+                                .query("LIVE SELECT * FROM apps FETCH icon")
                                 .await
-                                .expect("Should be able to get live stream from app entries table")
+                                .expect("Should be able to get live stream from app apps table")
                                 .stream::<Notification<AppWithIcon>>(0)
                             {
                                 Ok(mut stream) => {

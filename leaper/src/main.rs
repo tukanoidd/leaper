@@ -3,31 +3,77 @@ mod cli;
 mod config;
 mod db;
 
+#[cfg(feature = "testbed")]
+mod testbed;
+
+#[cfg(feature = "testbed")]
+pub use testbed::*;
+
 use std::sync::Arc;
 
-use clap::Parser;
-use directories::ProjectDirs;
+#[cfg(not(feature = "testbed"))]
 use iced::Executor;
-use iced_aw::iced_fonts::REQUIRED_FONT_BYTES;
-use iced_fonts::NERD_FONT_BYTES;
-use iced_layershell::{
-    build_pattern::MainSettings,
-    reexport::{Anchor, KeyboardInteractivity, Layer},
-    settings::{LayerShellSettings, Settings, StartMode},
-};
+
+use clap::Parser;
 use tracing_subscriber::{fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{app::App, cli::Cli, config::Config};
+#[cfg(feature = "testbed")]
+fn main() -> miette::Result<()> {
+    use miette::IntoDiagnostic;
+    use tracing::Instrument;
 
+    use crate::testbed::*;
+
+    miette::set_panic_hook();
+
+    let TestbedCli { debug, trace } = TestbedCli::parse();
+
+    init_tracing(debug, trace)?;
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(10 * 1024 * 1024)
+        .build()
+        .into_diagnostic()?;
+
+    runtime.block_on(
+        async move {
+            #[cfg(not(feature = "db-websocket"))]
+            let project_dirs = directories::ProjectDirs::from("com", "tukanoid", "leaper")
+                .ok_or(LeaperError::NoProjectDirs)?;
+
+            let db = crate::db::init_db(
+                #[cfg(not(feature = "db-websocket"))]
+                project_dirs,
+            )
+            .await?;
+
+            crate::db::fs::index(db).await?;
+
+            Ok(())
+        }
+        .instrument(tracing::debug_span!("Testbed Execution")),
+    )
+}
+
+#[cfg(not(feature = "testbed"))]
 fn main() -> LeaperResult<()> {
+    use iced_layershell::{
+        build_pattern::MainSettings,
+        reexport::{Anchor, KeyboardInteractivity, Layer},
+        settings::{LayerShellSettings, Settings, StartMode},
+    };
+
+    use crate::{app::App, cli::Cli, config::Config};
+
     miette::set_panic_hook();
 
     let Cli { mode, trace, debug } = Cli::parse();
 
     init_tracing(trace, debug)?;
 
-    let project_dirs =
-        ProjectDirs::from("com", "tukanoid", "leaper").ok_or(LeaperError::NoProjectDirs)?;
+    let project_dirs = directories::ProjectDirs::from("com", "tukanoid", "leaper")
+        .ok_or(LeaperError::NoProjectDirs)?;
 
     let config = Config::open(&project_dirs)?;
 
@@ -73,12 +119,39 @@ fn main() -> LeaperResult<()> {
         virtual_keyboard_support,
     };
 
+    struct LeaperRuntime(tokio::runtime::Runtime);
+
+    impl Executor for LeaperRuntime {
+        fn new() -> Result<Self, futures::io::Error>
+        where
+            Self: Sized,
+        {
+            Ok(Self(
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .thread_stack_size(10 * 1024 * 1024)
+                    .build()?,
+            ))
+        }
+
+        fn spawn(
+            &self,
+            future: impl Future<Output = ()> + iced::advanced::graphics::futures::MaybeSend + 'static,
+        ) {
+            <tokio::runtime::Runtime as Executor>::spawn(&self.0, future)
+        }
+
+        fn enter<R>(&self, f: impl FnOnce() -> R) -> R {
+            <tokio::runtime::Runtime as Executor>::enter(&self.0, f)
+        }
+    }
+
     iced_layershell::build_pattern::application("leaper", App::update, App::view)
         .settings(settings)
         .theme(App::theme)
         .subscription(App::subscription)
-        .font(REQUIRED_FONT_BYTES)
-        .font(NERD_FONT_BYTES)
+        .font(iced_fonts::REQUIRED_FONT_BYTES)
+        .font(iced_fonts::NERD_FONT_BYTES)
         .executor::<LeaperRuntime>()
         .run_with(move || {
             App::builder()
@@ -91,39 +164,12 @@ fn main() -> LeaperResult<()> {
     Ok(())
 }
 
-struct LeaperRuntime(tokio::runtime::Runtime);
-
-impl Executor for LeaperRuntime {
-    fn new() -> Result<Self, futures::io::Error>
-    where
-        Self: Sized,
-    {
-        Ok(Self(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .thread_stack_size(10 * 1024 * 1024)
-                .build()?,
-        ))
-    }
-
-    fn spawn(
-        &self,
-        future: impl Future<Output = ()> + iced::advanced::graphics::futures::MaybeSend + 'static,
-    ) {
-        <tokio::runtime::Runtime as Executor>::spawn(&self.0, future)
-    }
-
-    fn enter<R>(&self, f: impl FnOnce() -> R) -> R {
-        <tokio::runtime::Runtime as Executor>::enter(&self.0, f)
-    }
-}
-
 fn init_tracing(trace: bool, debug: bool) -> LeaperResult<()> {
     let level = (cfg!(feature = "profile") || trace)
         .then_some("trace")
         .or_else(|| (cfg!(debug_assertions) || debug).then_some("debug"))
         .unwrap_or("info");
-    let directives = ["leaper", "leaper_apps", "leaper_db"]
+    let directives = ["leaper"]
         .map(|target| format!("{target}={level}"))
         .join(",");
 

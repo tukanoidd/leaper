@@ -71,7 +71,7 @@ impl Apps {
                                 Ok(db
                                     .query(
                                         "
-                                        SELECT * FROM entries
+                                        SELECT * FROM apps
                                             ORDER BY name ASC
                                             FETCH icon
                                         ",
@@ -92,7 +92,7 @@ impl Apps {
                     self.apps = apps;
 
                     tracing::trace!(
-                        "Initialized apps list from cache [{} entries]",
+                        "Initialized apps list from cache [{} apps]",
                         self.apps.len()
                     );
                 }
