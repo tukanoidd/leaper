@@ -48,7 +48,9 @@ fn main() -> miette::Result<()> {
             )
             .await?;
 
-            crate::db::fs::index(db).await?;
+            let home = std::env::var("HOME").into_diagnostic()?;
+
+            crate::db::fs::index(home, db).await?;
 
             Ok(())
         }

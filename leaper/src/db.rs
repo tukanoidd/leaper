@@ -1,11 +1,13 @@
 pub mod apps;
 pub mod fs;
+pub mod queries;
 
 use std::sync::Arc;
 
 #[cfg(not(feature = "db-websocket"))]
 use directories::ProjectDirs;
 
+use macros::lerror;
 use surrealdb::{
     Surreal,
     opt::{Config, capabilities::Capabilities},
@@ -70,4 +72,11 @@ pub async fn init_db(
     .await?;
 
     Ok(Arc::new(db))
+}
+
+#[lerror]
+#[lerr(prefix = "[leaper::db]", result_name = DBResult)]
+pub enum DBError {
+    #[lerr(str = "[surrealdb] {0}")]
+    Surreal(#[lerr(from, wrap = Arc)] surrealdb::Error),
 }

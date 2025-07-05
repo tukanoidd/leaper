@@ -6,16 +6,22 @@ use macros::{db_table, sql};
 use surrealdb::RecordId;
 use tokio::task::JoinSet;
 
-use crate::db::DB;
+use crate::db::{
+    DB, DBError,
+    queries::{CreateEmptyIdQuery, DBQuery, RelateQuery},
+};
 
-#[tracing::instrument(skip(db), level = "debug")]
-pub async fn index(db: Arc<DB>) -> FSResult<()> {
+#[tracing::instrument(skip(db), level = "trace")]
+pub async fn index(root: impl Into<PathBuf> + std::fmt::Debug, db: Arc<DB>) -> FSResult<()> {
     let db_clone = db.clone();
-    let mut walkdir = async_walkdir::WalkDir::new("/").filter(move |entry| {
+    let mut walkdir = async_walkdir::WalkDir::new(root.into()).filter(move |entry| {
         let db = db_clone.clone();
 
         async move {
-            if find_node_by_path(entry.path(), db)
+            if FindNodeByPathQuery::builder()
+                .path(entry.path())
+                .build()
+                .execute(db)
                 .await
                 .ok()
                 .map(|x| x.is_some())
@@ -52,19 +58,22 @@ pub async fn index(db: Arc<DB>) -> FSResult<()> {
     Ok(())
 }
 
-async fn find_node_by_path(path: PathBuf, db: Arc<DB>) -> FSResult<Option<RecordId>> {
-    Ok(db
-        .query(sql!(
-            "SELECT VALUE id FROM ONLY fs_nodes WHERE path = $path LIMIT 1"
-        ))
-        .bind(("path", path))
-        .await?
-        .take(0)?)
+#[derive(bon::Builder, macros::DBQuery)]
+#[query(output = "Option<RecordId>")]
+pub struct FindNodeByPathQuery {
+    #[var(sql = "SELECT VALUE id FROM ONLY fs_nodes WHERE path = {} LIMIT 1")]
+    #[builder(into)]
+    path: PathBuf,
 }
 
-#[tracing::instrument(skip(db), level = "trace")]
+#[tracing::instrument(skip(db), level = "debug")]
 async fn add_fs_node(path: PathBuf, db: Arc<DB>) -> FSResult<RecordId> {
-    if let Some(id) = find_node_by_path(path.clone(), db.clone()).await? {
+    if let Some(id) = FindNodeByPathQuery::builder()
+        .path(&path)
+        .build()
+        .execute(db.clone())
+        .await?
+    {
         return Ok(id.clone());
     }
 
@@ -90,7 +99,7 @@ async fn add_fs_node(path: PathBuf, db: Arc<DB>) -> FSResult<RecordId> {
     Ok(fs_node_id)
 }
 
-#[tracing::instrument(skip(db), level = "debug")]
+#[tracing::instrument(skip(db), level = "trace")]
 async fn add_symlink(path: PathBuf, fs_node_id: RecordId, db: Arc<DB>) -> FSResult<()> {
     let links_to = match path.read_link() {
         Ok(path) => path,
@@ -100,75 +109,88 @@ async fn add_symlink(path: PathBuf, fs_node_id: RecordId, db: Arc<DB>) -> FSResu
         }
     };
 
-    let symlink_id: RecordId = db
-        .query(sql!("(CREATE symlinks).id"))
+    let symlink_id = CreateEmptyIdQuery::builder()
+        .table("symlinks")
+        .build()
+        .execute(db.clone())
         .await?
-        .take::<Option<RecordId>>(0)?
         .expect("Should be able to create a symlink entry here");
 
-    db.query(sql!("RELATE $fs_node->is_symlink->$symlink"))
-        .bind(("fs_node", fs_node_id.clone()))
-        .bind(("symlink", symlink_id.clone()))
-        .await?
-        .check()?;
+    RelateQuery::builder()
+        .in_(fs_node_id)
+        .table("is_symlink")
+        .out(symlink_id.clone())
+        .build()
+        .execute(db.clone())
+        .await?;
 
     let symlinked_fs_node: RecordId = Box::pin(add_fs_node(links_to, db.clone())).await?;
 
-    db.query(sql!("RELATE $symlink->is_symlink_of->$symlinked_node"))
-        .bind(("symlink", symlink_id))
-        .bind(("symlinked_node", symlinked_fs_node))
-        .await?
-        .check()?;
+    RelateQuery::builder()
+        .in_(symlink_id)
+        .table("is_symlink_of")
+        .out(symlinked_fs_node)
+        .build()
+        .execute(db)
+        .await?;
 
     Ok(())
 }
 
-#[tracing::instrument(skip(db), level = "debug")]
+#[tracing::instrument(skip(db), level = "trace")]
 async fn add_dir(fs_node_id: RecordId, db: Arc<DB>) -> FSResult<()> {
-    let dir_id: RecordId = db
-        .query(sql!("(CREATE directories).id"))
+    let dir_id = CreateEmptyIdQuery::builder()
+        .table("directories")
+        .build()
+        .execute(db.clone())
         .await?
-        .take::<Option<RecordId>>(0)?
-        .expect("Should be able to create a directory entry without trouble here");
+        .expect("Should be able to create a dir entry here");
 
-    db.query(sql!("RELATE $fs_node->is_dir->$dir_id"))
-        .bind(("fs_node", fs_node_id.clone()))
-        .bind(("dir_id", dir_id))
-        .await?
-        .check()?;
+    RelateQuery::builder()
+        .in_(fs_node_id)
+        .table("is_dir")
+        .out(dir_id)
+        .build()
+        .execute(db)
+        .await?;
 
     // TODO: checks
 
     Ok(())
 }
 
-#[tracing::instrument(skip(db), level = "debug")]
+#[tracing::instrument(skip(db), level = "trace")]
 async fn add_file(fs_node_id: RecordId, db: Arc<DB>) -> FSResult<()> {
-    let file_id: RecordId = db
-        .query(sql!("(CREATE files).id"))
+    let file_id = CreateEmptyIdQuery::builder()
+        .table("files")
+        .build()
+        .execute(db.clone())
         .await?
-        .take::<Option<RecordId>>(0)?
-        .expect("Should be able to create a file entry at this point");
+        .expect("Should be able to create a file entry here");
 
-    db.query(sql!("RELATE $fs_node->is_file->$file_id"))
-        .bind(("fs_node", fs_node_id))
-        .bind(("file_id", file_id))
-        .await?
-        .check()?;
+    RelateQuery::builder()
+        .in_(fs_node_id)
+        .table("is_file")
+        .out(file_id)
+        .build()
+        .execute(db)
+        .await?;
 
     Ok(())
 }
 
-#[tracing::instrument(skip(db), level = "debug")]
+#[tracing::instrument(skip(db), level = "trace")]
 async fn add_parent(path: PathBuf, child_fs_node_id: RecordId, db: Arc<DB>) -> FSResult<RecordId> {
     // Should be fine as we only call this function on parent directories of nodes
     let parent_fs_node_id: RecordId = Box::pin(add_fs_node(path, db.clone())).await?;
 
-    db.query(sql!("RELATE $parent->is_parent_of->$child"))
-        .bind(("parent", parent_fs_node_id.clone()))
-        .bind(("child", child_fs_node_id))
-        .await?
-        .check()?;
+    RelateQuery::builder()
+        .in_(parent_fs_node_id.clone())
+        .table("is_parent_of")
+        .out(child_fs_node_id)
+        .build()
+        .execute(db)
+        .await?;
 
     Ok(parent_fs_node_id)
 }
@@ -222,4 +244,7 @@ pub enum FSError {
 
     #[lerr(str = "[surreal] {0}")]
     Surreal(#[lerr(from, wrap = Arc)] surrealdb::Error),
+
+    #[lerr(str = "{0}")]
+    DB(#[lerr(from)] DBError),
 }
