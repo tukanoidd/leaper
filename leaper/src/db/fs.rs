@@ -4,12 +4,12 @@ use async_walkdir::Filtering;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use surrealdb::RecordId;
-use surrealdb_extras::{SurrealTable, sql};
+use surrealdb_extras::{SurrealQuery, SurrealTable, sql};
 use tokio::task::JoinSet;
 
 use crate::db::{
     DB, DBError,
-    queries::{CreateEmptyIdQuery, DBQuery, RelateQuery},
+    queries::{CreateEmptyIdQuery, RelateQuery},
 };
 
 #[tracing::instrument(skip(db), level = "trace")]
@@ -59,8 +59,8 @@ pub async fn index(root: impl Into<PathBuf> + std::fmt::Debug, db: Arc<DB>) -> F
     Ok(())
 }
 
-#[derive(bon::Builder, macros::DBQuery)]
-#[query(output = "Option<RecordId>")]
+#[derive(bon::Builder, SurrealQuery)]
+#[query(output = "Option<RecordId>", error = FSError)]
 pub struct FindNodeByPathQuery {
     #[var(sql = "SELECT VALUE id FROM ONLY fs_nodes WHERE path = {} LIMIT 1")]
     #[builder(into)]

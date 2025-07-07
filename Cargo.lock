@@ -3373,8 +3373,6 @@ dependencies = [
  "manyhow",
  "proc-macro2",
  "quote",
- "surrealdb-core-nightly",
- "surrealdb-nightly",
  "syn 2.0.104",
 ]
 
@@ -6138,7 +6136,7 @@ dependencies = [
 [[package]]
 name = "surrealdb-extras"
 version = "2.0.11-alpha3"
-source = "git+https://github.com/tukanoidd/surrealdb-extras.git#b4f59c17e0d40a70ef58fe1595c217365ff8ea48"
+source = "git+https://github.com/tukanoidd/surrealdb-extras.git#ce0fd87c7b39ab0952fd88639ee00ac455b955e9"
 dependencies = [
  "serde",
  "serde-content",
@@ -6149,7 +6147,7 @@ dependencies = [
 [[package]]
 name = "surrealdb-extras-proc-macro"
 version = "2.0.11-alpha3"
-source = "git+https://github.com/tukanoidd/surrealdb-extras.git#b4f59c17e0d40a70ef58fe1595c217365ff8ea48"
+source = "git+https://github.com/tukanoidd/surrealdb-extras.git#ce0fd87c7b39ab0952fd88639ee00ac455b955e9"
 dependencies = [
  "darling",
  "heck",

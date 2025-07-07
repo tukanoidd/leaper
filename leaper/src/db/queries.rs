@@ -1,19 +1,10 @@
-use std::sync::Arc;
-
 use surrealdb::RecordId;
+use surrealdb_extras::SurrealQuery;
 
-use crate::db::{DB, DBResult};
+use crate::db::DBError;
 
-pub trait DBQuery {
-    type Output;
-
-    const QUERY_STR: &'static str;
-
-    async fn execute(self, db: Arc<DB>) -> DBResult<Self::Output>;
-}
-
-#[derive(bon::Builder, macros::DBQuery)]
-#[query(check)]
+#[derive(bon::Builder, SurrealQuery)]
+#[query(check, error = DBError)]
 pub struct RelateQuery {
     #[builder(into)]
     #[var(sql = "RELATE {}->")]
@@ -26,8 +17,8 @@ pub struct RelateQuery {
     out: RecordId,
 }
 
-#[derive(bon::Builder, macros::DBQuery)]
-#[query(output = "Option<RecordId>")]
+#[derive(bon::Builder, SurrealQuery)]
+#[query(output = "Option<RecordId>", error = DBError)]
 pub struct CreateEmptyIdQuery {
     #[builder(into)]
     #[var(sql = "(CREATE {}).id")]
