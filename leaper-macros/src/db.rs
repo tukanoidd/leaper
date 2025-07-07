@@ -204,7 +204,7 @@ impl DeriveInputUtil for DBQuery {
         Ok(quote! {
             impl #impl_gen crate::db::queries::DBQuery for #ident #ty_gen #where_gen {
                 type Output = #output;
-                const QUERY_STR: &'static str = macros::sql!(#query_str);
+                const QUERY_STR: &'static str = surrealdb_extras::sql!(#query_str);
 
                 async fn execute(self, db: Arc<DB>) -> crate::db::DBResult<Self::Output> {
                     #self_unwrapped

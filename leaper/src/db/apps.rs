@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use freedesktop_desktop_entry::DesktopEntry;
-use macros::db_table;
 use nom::{
     IResult, Parser,
     branch::permutation,
@@ -13,10 +12,11 @@ use nom::{
 };
 use serde::{Deserialize, Serialize};
 use surrealdb::RecordId;
+use surrealdb_extras::SurrealTable;
 
 use crate::app::mode::apps::search::{AppsError, AppsResult};
 
-#[db_table]
+#[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = apps,
     sql(
@@ -81,7 +81,7 @@ pub struct AppWithIcon {
     pub icon: Option<AppIcon>,
 }
 
-#[db_table]
+#[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = icons,
     sql(

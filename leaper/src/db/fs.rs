@@ -2,8 +2,9 @@ use std::{path::PathBuf, sync::Arc};
 
 use async_walkdir::Filtering;
 use futures::StreamExt;
-use macros::{db_table, sql};
+use serde::{Deserialize, Serialize};
 use surrealdb::RecordId;
+use surrealdb_extras::{SurrealTable, sql};
 use tokio::task::JoinSet;
 
 use crate::db::{
@@ -195,7 +196,7 @@ async fn add_parent(path: PathBuf, child_fs_node_id: RecordId, db: Arc<DB>) -> F
     Ok(parent_fs_node_id)
 }
 
-#[db_table]
+#[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = fs_nodes,
     sql(
@@ -211,7 +212,7 @@ pub struct FSNode {
     pub path: PathBuf,
 }
 
-#[db_table]
+#[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = directories,
 )]
@@ -219,7 +220,7 @@ pub struct Directory {
     pub id: RecordId,
 }
 
-#[db_table]
+#[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = files,
 )]
@@ -227,7 +228,7 @@ pub struct File {
     id: RecordId,
 }
 
-#[db_table]
+#[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = symlinks,
     sql("DEFINE TABLE is_symlink_of TYPE RELATION")

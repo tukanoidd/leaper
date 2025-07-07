@@ -33,8 +33,8 @@ iced_fonts = { version = "0.2.1", features = ["nerd"] }
 
 clap = { version = "4.5.40", features = ["derive"] }
 
-# surrealdb-extras = "2.0.10"
 surrealdb-extras = { git = "https://github.com/tukanoidd/surrealdb-extras.git" }
+# surrealdb-extras = { path = "../../surrealdb-extras" }
 
 tokio = "1.46"
 futures = "0.3.31"
