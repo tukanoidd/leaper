@@ -59,7 +59,6 @@ pastey = "0.1"
 itertools = "0.14"
 
 serde = "1.0"
-nom = "8.0.0"
 toml = "0.8.23"
 
 tracing = "0.1"

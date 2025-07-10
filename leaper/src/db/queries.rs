@@ -4,23 +4,27 @@ use surrealdb_extras::SurrealQuery;
 use crate::db::DBError;
 
 #[derive(bon::Builder, SurrealQuery)]
-#[query(check, error = DBError)]
+#[query(
+    check,
+    error = DBError,
+    sql = "RELATE {in_}->{table}->{out}"
+)]
 pub struct RelateQuery {
     #[builder(into)]
-    #[var(sql = "RELATE {}->")]
     in_: RecordId,
     #[builder(into)]
-    #[var(sql = "{}->")]
     table: surrealdb::sql::Table,
     #[builder(into)]
-    #[var(sql = "{}")]
     out: RecordId,
 }
 
 #[derive(bon::Builder, SurrealQuery)]
-#[query(output = "Option<RecordId>", error = DBError)]
+#[query(
+    output = "Option<RecordId>",
+    error = DBError,
+    sql = "(CREATE {table}).id"
+)]
 pub struct CreateEmptyIdQuery {
     #[builder(into)]
-    #[var(sql = "(CREATE {}).id")]
     table: surrealdb::sql::Table,
 }

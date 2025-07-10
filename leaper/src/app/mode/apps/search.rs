@@ -8,6 +8,7 @@ use itertools::Itertools;
 
 use macros::lerror;
 use surrealdb::value;
+use surrealdb_extras::sql;
 use tokio::task::JoinSet;
 use tracing::Instrument;
 use walkdir::WalkDir;
@@ -284,7 +285,7 @@ impl AppsFinder {
                     }
 
                     if !value::from_value::<bool>(db
-                        .query("RETURN (array::is_empty(SELECT VALUE id FROM apps WHERE desktop_entry_path = $path))")
+                        .query(sql!("RETURN (array::is_empty(SELECT VALUE id FROM app WHERE desktop_entry_path = $path))"))
                         .bind(("path", path.to_path_buf()))
                         .await?
                         .take(0)?)?
@@ -298,7 +299,7 @@ impl AppsFinder {
                         match AppEntry::new(path) {
                             Ok(entry) => {
                                 if let Err(err)=   db
-                                    .create::<Option<AppEntry>>("apps")
+                                    .create::<Option<AppEntry>>("app")
                                     .content(entry)
                                     .await
                                 {

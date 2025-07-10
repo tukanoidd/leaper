@@ -19,6 +19,8 @@ use tracing_subscriber::{fmt::format::FmtSpan, layer::SubscriberExt, util::Subsc
 
 #[cfg(feature = "testbed")]
 fn main() -> miette::Result<()> {
+    use futures::StreamExt;
+    use itertools::Itertools;
     use miette::IntoDiagnostic;
     use tracing::Instrument;
 
@@ -48,9 +50,60 @@ fn main() -> miette::Result<()> {
             )
             .await?;
 
-            let home = std::env::var("HOME").into_diagnostic()?;
+            // icons
+            {
+                static DEFAULT_PATHS: std::sync::LazyLock<Vec<std::path::PathBuf>> =
+                    std::sync::LazyLock::new(|| {
+                        ["/usr/share", "/usr/local/share", "/snap/"]
+                            .into_iter()
+                            .map(std::path::PathBuf::from)
+                            .filter(|p| p.exists())
+                            .collect_vec()
+                    });
 
-            crate::db::fs::index(home, db).await?;
+                let xdg_paths = std::env::var("XDG_DATA_DIRS")
+                    .ok()
+                    .map(|dirs_str| {
+                        dirs_str
+                            .split(":")
+                            .map(std::path::PathBuf::from)
+                            .filter(|p| p.exists())
+                            .collect_vec()
+                    })
+                    .into_iter()
+                    .flatten()
+                    .collect_vec();
+
+                let home_path = std::env::var("HOME").ok().map(std::path::PathBuf::from);
+
+                // Icons Search
+                let home_icons_path = home_path.as_ref().and_then(|hp| {
+                    let p = hp.join(".icons");
+                    p.exists().then_some(p)
+                });
+
+                let icon_search_paths = DEFAULT_PATHS
+                    .iter()
+                    .chain(xdg_paths.iter())
+                    .chain(home_icons_path.iter())
+                    .unique()
+                    .sorted()
+                    .cloned()
+                    .collect_vec();
+
+                let mut futs = icon_search_paths.into_iter().fold(
+                    futures::stream::FuturesUnordered::new(),
+                    |futs, path| {
+                        let db = db.clone();
+                        futs.push(async move { crate::db::fs::index(path, db).await });
+                        futs
+                    },
+                );
+
+                while let Some(res) = futs.next().await {
+                    res?;
+                }
+            }
 
             Ok(())
         }

@@ -1,15 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use freedesktop_desktop_entry::DesktopEntry;
-use nom::{
-    IResult, Parser,
-    branch::permutation,
-    bytes::tag,
-    character::{char, none_of, one_of},
-    combinator::recognize,
-    multi::{many0, many1},
-    sequence::terminated,
-};
 use serde::{Deserialize, Serialize};
 use surrealdb::RecordId;
 use surrealdb_extras::SurrealTable;
@@ -18,15 +9,15 @@ use crate::app::mode::apps::search::{AppsError, AppsResult};
 
 #[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
 #[table(
-    db = apps,
+    db = app,
     sql(
-        "DEFINE INDEX app_dep_ind ON TABLE apps COLUMNS desktop_entry_path UNIQUE",
-        "DEFINE INDEX app_name_ind ON TABLE apps COLUMNS name UNIQUE",
+        "DEFINE INDEX app_dep_ind ON TABLE app COLUMNS desktop_entry_path UNIQUE",
+        "DEFINE INDEX app_name_ind ON TABLE app COLUMNS name UNIQUE",
         "
-        DEFINE EVENT app_entry_added ON TABLE apps
+        DEFINE EVENT app_entry_added ON TABLE app
             WHEN $event = \"CREATE\" && $after.icon_name != NULL
             THEN (
-                UPDATE $after.id SET icon = (SELECT VALUE id FROM ONLY icons
+                UPDATE $after.id SET icon = (SELECT VALUE id FROM ONLY icon
                     WHERE name = $after.icon_name
                     LIMIT 1)
             )
@@ -83,14 +74,14 @@ pub struct AppWithIcon {
 
 #[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
 #[table(
-    db = icons,
+    db = icon,
     sql(
-        "DEFINE INDEX icon_path_ind ON TABLE icons COLUMNS path UNIQUE",
+        "DEFINE INDEX icon_path_ind ON TABLE icon COLUMNS path UNIQUE",
         "
-        DEFINE EVENT icon_added ON TABLE icons
+        DEFINE EVENT icon_added ON TABLE icon
             WHEN $event = \"CREATE\"
             THEN (
-                UPDATE apps SET icon = $value.id WHERE icon_name = $value.name
+                UPDATE app SET icon = $value.id WHERE icon_name = $value.name
             )
         "
     )
@@ -100,7 +91,6 @@ pub struct AppIcon {
     pub path: PathBuf,
     pub svg: bool,
     pub xpm: bool,
-    pub dims: Option<AppIconDims>,
 }
 
 impl AppIcon {
@@ -112,13 +102,6 @@ impl AppIcon {
             .to_string_lossy()
             .to_string();
 
-        let dims = path.components().rev().find_map(|comp| {
-            let comp_str = comp.as_os_str().to_string_lossy().to_string();
-            let dims = AppIconDims::parse(&comp_str);
-
-            dims.ok().map(|(_, dims)| dims)
-        });
-
         let ext = path.extension().and_then(|e| e.to_str());
 
         Ok(Self {
@@ -126,53 +109,6 @@ impl AppIcon {
             path: path.to_path_buf(),
             svg: matches!(ext, Some("svg")),
             xpm: matches!(ext, Some("xpm")),
-            dims,
         })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct AppIconDims {
-    pub width: usize,
-    pub height: usize,
-}
-
-impl AppIconDims {
-    fn parse(input: &str) -> IResult<&str, Self> {
-        permutation((
-            many0(none_of("0123456789")),
-            terminated(Self::parse_decimal, tag("x")),
-            Self::parse_decimal,
-        ))
-        .map(|(_, width, height)| Self { width, height })
-        .parse(input)
-    }
-
-    fn area(&self) -> usize {
-        self.width * self.height
-    }
-
-    fn parse_decimal(input: &str) -> IResult<&str, usize> {
-        recognize(many1(terminated(
-            one_of("0123456789"),
-            many0(char::<&str, _>('_')),
-        )))
-        .map_res(|s| {
-            s.parse::<usize>()
-                .map_err(|_| nom::error::Error::new(input, nom::error::ErrorKind::IsNot))
-        })
-        .parse(input)
-    }
-}
-
-impl PartialOrd for AppIconDims {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for AppIconDims {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.area().cmp(&other.area())
     }
 }

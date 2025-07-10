@@ -71,7 +71,7 @@ impl Apps {
                                 Ok(db
                                     .query(
                                         "
-                                        SELECT * FROM apps
+                                        SELECT * FROM app
                                             ORDER BY name ASC
                                             FETCH icon
                                         ",
