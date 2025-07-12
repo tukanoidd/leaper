@@ -3,19 +3,22 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use icon_cache::file::OwnedIconCache;
+use futures::StreamExt;
 use itertools::Itertools;
 
 use macros::lerror;
-use surrealdb::value;
-use surrealdb_extras::sql;
+use surrealdb::{Notification, value};
+use surrealdb_extras::SurrealQuery;
 use tokio::task::JoinSet;
 use tracing::Instrument;
-use walkdir::WalkDir;
 
-use crate::db::{
-    DB,
-    apps::{AppEntry, AppIcon},
+use crate::{
+    check_stop,
+    db::{
+        DB, InstrumentedSurrealQuery,
+        apps::CreateAppEntryQuery,
+        fs::{self, FSError, FSResult},
+    },
 };
 
 #[derive(Clone, derive_more::Debug)]
@@ -35,25 +38,10 @@ impl AppsFinder {
     pub async fn search(self, db: Arc<DB>) -> AppsResult<()> {
         let Self { stop_receiver } = self;
 
-        macro_rules! check_stop {
-            ($stop_recv:expr) => {
-                match $stop_recv.is_empty() {
-                    true => {}
-                    false => match $stop_recv.recv().await {
-                        Ok(_) => return Err(AppsError::InterruptedByParent),
-                        Err(err) => match err {
-                            tokio_mpmc::ChannelError::ChannelClosed => {
-                                return Err(AppsError::LostConnectionToParent)
-                            }
-                            _ => unreachable!(),
-                        },
-                    },
-                }
-            };
-        }
+        let mut tasks = JoinSet::new();
 
         static DEFAULT_PATHS: LazyLock<Vec<PathBuf>> = LazyLock::new(|| {
-            ["/usr/share", "/usr/local/share", "/snap/"]
+            ["/usr/share/", "/usr/local/share/", "/snap/"]
                 .into_iter()
                 .map(PathBuf::from)
                 .filter(|p| p.exists())
@@ -75,250 +63,133 @@ impl AppsFinder {
 
         let home_path = std::env::var("HOME").ok().map(PathBuf::from);
 
-        // Icons Search
         let home_icons_path = home_path.as_ref().and_then(|hp| {
-            let p = hp.join(".icons");
+            let p = hp.join(".icons/");
             p.exists().then_some(p)
         });
 
-        let icon_search_paths = DEFAULT_PATHS
-            .iter()
-            .chain(xdg_paths.iter())
-            .chain(home_icons_path.iter())
-            .unique()
-            .sorted()
-            .cloned()
-            .collect_vec();
-
-        let mut unordered_search_tasks = JoinSet::new();
-
-        let db_clone = db.clone();
-
-        check_stop!(stop_receiver);
-
-        let stop_receiver_clone = stop_receiver.clone();
-        unordered_search_tasks.spawn(
-            async move {
-                let stop_receiver = stop_receiver_clone;
-                let db = db_clone;
-
-                let (icon_search_path_sender, mut icon_search_path_receiver) =
-                    tokio::sync::mpsc::unbounded_channel::<PathBuf>();
-                let icon_search_path_sender_from_cache = icon_search_path_sender.clone();
-
-                let (icon_cache_sender, mut icon_cache_receiver) =
-                    tokio::sync::mpsc::unbounded_channel::<PathBuf>();
-
-                let (icon_path_sender, mut icon_path_receiver) =
-                    tokio::sync::mpsc::unbounded_channel::<PathBuf>();
-
-                let mut tasks = JoinSet::new();
-
-                let stop_receiver_clone = stop_receiver.clone();
-                let db_clone = db.clone();
-                tasks.spawn(async move {
-                    let stop_receiver = stop_receiver_clone;
-                    let db = db_clone;
-
-                    while !icon_search_path_receiver.is_closed() {
-                        check_stop!(stop_receiver);
-
-                        let Some(icon_search_path) = icon_search_path_receiver.recv().await else {
-                            continue;
-                        };
-
-                        tracing::trace!("New Search Path: {icon_search_path:?}");
-
-                        for entry in WalkDir::new(icon_search_path).min_depth(1).max_depth(10) {
-                            check_stop!(stop_receiver);
-
-                            let entry = entry?;
-                            let path = entry.path();
-
-                            if path.is_dir() {
-                                continue;
-                            }
-
-                            if path.file_name().and_then(|n| n.to_str()) == Some("icon-theme.cache")
-                            {
-                                icon_cache_sender.send(path.to_path_buf())?;
-                                continue;
-                            }
-
-                            if !value::from_value::<bool>(db
-                                .query("RETURN (array::is_empty(SELECT VALUE id FROM icons WHERE path = $path))")
-                                .bind(("path", path.to_path_buf()))
-                                .await?
-                                .take(0)?)?
-                            {
-                                continue;
-                            }
-
-                            let Some(ext) = path.extension() else {
-                                continue;
-                            };
-
-                            let ext = ext.to_string_lossy().to_string().to_lowercase();
-
-                            if image::ImageFormat::all()
-                                .flat_map(|f| f.extensions_str())
-                                .chain([&"svg", &"xpm"])
-                                .map(|s| s.to_lowercase())
-                                .unique()
-                                .any(|e| e == ext)
-                            {
-                                icon_path_sender.send(path.to_path_buf())?;
-                            }
-                        }
-                    }
-
-                    AppsResult::Ok(())
-                }.instrument(tracing::trace_span!("Icon Search Path Task")));
-
-                let stop_receiver_clone = stop_receiver.clone();
-                tasks.spawn(async move {
-                    let stop_receiver = stop_receiver_clone;
-
-                    while !icon_cache_receiver.is_closed() {
-                        check_stop!(stop_receiver);
-
-                        let Some(icon_cache) = icon_cache_receiver.recv().await else {
-                            continue;
-                        };
-
-                        tracing::trace!("New icon cache: {icon_cache:?}");
-
-                        let owned_cache = OwnedIconCache::open(&icon_cache)?;
-                        let ref_cache = owned_cache
-                            .icon_cache()
-                            .map_err(|err| AppsError::Dynamic(err.to_string()))?;
-
-                        let icon_search_paths = ref_cache.iter().flat_map(|icon| {
-                            icon.image_list.iter().next().map(|img| img.directory)
-                        });
-
-                        for icon_search_path in icon_search_paths {
-                            let icon_search_path = match icon_search_path.is_relative() {
-                                true => icon_cache.parent().unwrap().join(icon_search_path),
-                                false => icon_search_path.into()
-                            };
-
-                            tracing::trace!("Sending Icon Search Path From Icon Cache: {icon_search_path:?}");
-
-                            icon_search_path_sender_from_cache.send(icon_search_path)?;
-                        }
-                    }
-
-                    AppsResult::Ok(())
-                }.instrument(tracing::trace_span!("Icon Cache Task")));
-
-                let stop_receiver_clone = stop_receiver.clone();
-                tasks.spawn(async move {
-                    let stop_receiver = stop_receiver_clone;
-
-                    while !icon_path_receiver.is_closed() {
-                        check_stop!(stop_receiver);
-
-                        let mut icon_paths = vec![];
-
-                        icon_path_receiver.recv_many(&mut icon_paths, 1000).await;
-
-                        if icon_paths.is_empty() {
-                            continue;
-                        }
-
-                        tracing::trace!("New Icons [{}]: {icon_paths:#?}!", icon_paths.len());
-
-                        for icon_path in icon_paths {
-                            if let Err(err) = db.create::<Option<AppIcon>>("icons")
-                                .content(AppIcon::new(icon_path)?)
-                                .await
-                            {
-                                tracing::trace!("WARN: Failed to add icon to database: {err}");
-                            }
-                        }
-                    }
-
-                    AppsResult::Ok(())
-                }.instrument(tracing::trace_span!("Icon Path Task")));
-
-                for icon_search_path in icon_search_paths {
-                    check_stop!(stop_receiver);
-
-                    tracing::trace!("Sending search path: {icon_search_path:?}");
-                    icon_search_path_sender.send(icon_search_path)?;
-                }
-
-                drop(icon_search_path_sender);
-
-                check_stop!(stop_receiver);
-
-                tasks.join_all().await.into_iter().collect::<AppsResult<Vec<_>>>()?;
-
-                AppsResult::Ok(())
-            }.instrument(tracing::trace_span!("Icon Search Task"))
-        );
-
-        // Apps search
         let home_share_path = home_path.as_ref().and_then(|hp| {
-            let p = hp.join(".local");
+            let p = hp.join(".local/share/applications/");
             p.exists().then_some(p)
         });
 
-        let app_search_paths = DEFAULT_PATHS
+        let search_paths = DEFAULT_PATHS
             .iter()
             .chain(xdg_paths.iter())
             .chain(home_share_path.iter())
+            .chain(home_icons_path.iter())
             .unique()
-            .sorted()
             .cloned()
             .collect_vec();
 
-        unordered_search_tasks.spawn(async move {
-            for search_path in app_search_paths {
-                for entry in WalkDir::new(search_path).max_depth(5) {
-                    let entry = entry?;
-                    let path = entry.path();
+        // Apps Search
+        {
+            let db_clone = db.clone();
+            let stop_receiver_clone = stop_receiver.clone();
+            tasks.spawn(
+                async move {
+                    let mut desktop_entries_stream = LiveSearchAppsQuery
+                        .instrumented_execute(db_clone.clone())
+                        .await?;
 
-                    if path.is_dir() {
-                        continue;
-                    }
+                    check_stop!([AppsError] stop_receiver_clone);
 
-                    if !value::from_value::<bool>(db
-                        .query(sql!("RETURN (array::is_empty(SELECT VALUE id FROM app WHERE desktop_entry_path = $path))"))
-                        .bind(("path", path.to_path_buf()))
-                        .await?
-                        .take(0)?)?
-                    {
-                        continue;
-                    }
+                    while let Some(entry) = desktop_entries_stream.next().await {
+                        check_stop!([AppsError] stop_receiver_clone);
 
-                    if path.extension().and_then(|e| e.to_str()) == Some("desktop") {
-                        tracing::trace!("New app: {path:?}");
-
-                        match AppEntry::new(path) {
-                            Ok(entry) => {
-                                if let Err(err)=   db
-                                    .create::<Option<AppEntry>>("app")
-                                    .content(entry)
-                                    .await
-                                {
-                                    tracing::trace!("WARN: Failed to add an app entry: {err}");
+                        match entry {
+                            Ok(Notification { action, data, .. }) => match action {
+                                value::Action::Create => {
+                                    let _ = CreateAppEntryQuery::new(data)
+                                        .inspect_err(|err| tracing::error!("{err}"))?
+                                        .instrumented_execute(db_clone.clone())
+                                        .await;
                                 }
-                            }
+                                value::Action::Update => {
+                                    tracing::error!("UPDATE???");
+                                    // TODO
+                                }
+                                value::Action::Delete => {
+                                    tracing::error!("DELETE???");
+                                    // TODO
+                                }
+                                _ => todo!(),
+                            },
                             Err(err) => {
                                 tracing::error!("{err}");
                                 continue;
                             }
                         }
                     }
+
+                    Ok(())
                 }
-            }
+                .instrument(tracing::debug_span!("Check desktop entries")),
+            );
+        }
 
-            AppsResult::Ok(())
-        }.instrument(tracing::trace_span!("App Search Task")));
+        // Icons & .desktop Search
+        {
+            let db_clone = db.clone();
+            let stop_receiver_clone = stop_receiver.clone();
+            tasks.spawn(
+                async move {
+                    let mut index_tasks = JoinSet::new();
 
-        unordered_search_tasks
+                    check_stop!([AppsError] stop_receiver_clone);
+
+                    search_paths.into_iter().for_each(|path| {
+                        index_tasks.spawn(
+                            fs::index()
+                                .root(path.clone())
+                                .db(db_clone.clone())
+                                .pre_filter(|path| {
+                                    if path.is_dir() {
+                                        return None;
+                                    }
+
+                                    let Some(ext) = path.extension().and_then(|x| x.to_str())
+                                    else {
+                                        return Some(false);
+                                    };
+
+                                    if [
+                                        "png", "jpg", "jpeg", "gif", "webp", "pbm", "pam", "ppm",
+                                        "pgm", "tiff", "tif", "tga", "dds", "bmp", "ico", "hdr",
+                                        "exr", "ff", "avif", "qoi", "pcx", "svg", "xpm", "desktop",
+                                    ]
+                                    .contains(&ext)
+                                    {
+                                        return None;
+                                    }
+
+                                    Some(false)
+                                })
+                                .stop_receiver(stop_receiver_clone.clone())
+                                .call()
+                                .instrument(tracing::debug_span!(
+                                    "Index path",
+                                    path = &path.to_string_lossy().to_string()
+                                )),
+                        );
+                    });
+
+                    check_stop!([AppsError] stop_receiver_clone);
+
+                    index_tasks
+                        .join_all()
+                        .instrument(tracing::debug_span!("Wait on index tasks"))
+                        .await
+                        .into_iter()
+                        .collect::<FSResult<Vec<_>>>()?;
+
+                    Ok(())
+                }
+                .instrument(tracing::debug_span!("Index paths tasks")),
+            );
+        }
+
+        tasks
             .join_all()
             .await
             .into_iter()
@@ -327,6 +198,18 @@ impl AppsFinder {
         Ok(())
     }
 }
+
+#[derive(SurrealQuery)]
+#[query(
+    stream = "PathBuf",
+    error = AppsError,
+    sql = "
+        LIVE SELECT VALUE in.path
+            FROM is_file
+            WHERE out.ext == 'desktop';
+    "
+)]
+struct LiveSearchAppsQuery;
 
 #[lerror]
 #[lerr(prefix = "[apps]", result_name = AppsResult)]
@@ -356,15 +239,16 @@ pub enum AppsError {
 
     #[lerr(str = "[surrealdb] {0}")]
     DB(#[lerr(from, wrap = Arc)] surrealdb::Error),
-
-    #[lerr(str = "[walkdir] {0}")]
-    WalkDir(#[lerr(from, wrap = Arc)] walkdir::Error),
+    #[lerr(str = "[db::fs] {0}")]
+    FS(#[lerr(from)] FSError),
 
     #[lerr(str = "[image] {0}")]
     Image(#[lerr(from, wrap = Arc)] image::ImageError),
 
     #[lerr(str = "[.desktop::decode] {0}")]
     DesktopEntryParse(#[lerr(from, wrap = Arc)] freedesktop_desktop_entry::DecodeError),
+    #[lerr(str = "[.desktop::exec] {0}")]
+    DesktopEntryExec(#[lerr(from, wrap = Arc)] freedesktop_desktop_entry::ExecError),
 
     #[lerr(str = "[dynamic] {0}")]
     Dynamic(String),

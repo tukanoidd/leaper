@@ -11,6 +11,8 @@ pub struct Cli {
     pub trace: bool,
     #[arg(long)]
     pub debug: bool,
+    #[arg(long)]
+    pub error: bool,
 }
 
 #[derive(Default, Clone, Copy, ValueEnum)]

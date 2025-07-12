@@ -15,7 +15,7 @@ use std::sync::Arc;
 use iced::Executor;
 
 use clap::Parser;
-use tracing_subscriber::{fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(feature = "testbed")]
 fn main() -> miette::Result<()> {
@@ -28,9 +28,13 @@ fn main() -> miette::Result<()> {
 
     miette::set_panic_hook();
 
-    let TestbedCli { debug, trace } = TestbedCli::parse();
+    let TestbedCli {
+        debug,
+        trace,
+        error,
+    } = TestbedCli::parse();
 
-    init_tracing(debug, trace)?;
+    init_tracing(debug, trace, error_wait_completion)?;
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -50,60 +54,7 @@ fn main() -> miette::Result<()> {
             )
             .await?;
 
-            // icons
-            {
-                static DEFAULT_PATHS: std::sync::LazyLock<Vec<std::path::PathBuf>> =
-                    std::sync::LazyLock::new(|| {
-                        ["/usr/share", "/usr/local/share", "/snap/"]
-                            .into_iter()
-                            .map(std::path::PathBuf::from)
-                            .filter(|p| p.exists())
-                            .collect_vec()
-                    });
-
-                let xdg_paths = std::env::var("XDG_DATA_DIRS")
-                    .ok()
-                    .map(|dirs_str| {
-                        dirs_str
-                            .split(":")
-                            .map(std::path::PathBuf::from)
-                            .filter(|p| p.exists())
-                            .collect_vec()
-                    })
-                    .into_iter()
-                    .flatten()
-                    .collect_vec();
-
-                let home_path = std::env::var("HOME").ok().map(std::path::PathBuf::from);
-
-                // Icons Search
-                let home_icons_path = home_path.as_ref().and_then(|hp| {
-                    let p = hp.join(".icons");
-                    p.exists().then_some(p)
-                });
-
-                let icon_search_paths = DEFAULT_PATHS
-                    .iter()
-                    .chain(xdg_paths.iter())
-                    .chain(home_icons_path.iter())
-                    .unique()
-                    .sorted()
-                    .cloned()
-                    .collect_vec();
-
-                let mut futs = icon_search_paths.into_iter().fold(
-                    futures::stream::FuturesUnordered::new(),
-                    |futs, path| {
-                        let db = db.clone();
-                        futs.push(async move { crate::db::fs::index(path, db).await });
-                        futs
-                    },
-                );
-
-                while let Some(res) = futs.next().await {
-                    res?;
-                }
-            }
+            // TODO
 
             Ok(())
         }
@@ -123,9 +74,14 @@ fn main() -> LeaperResult<()> {
 
     miette::set_panic_hook();
 
-    let Cli { mode, trace, debug } = Cli::parse();
+    let Cli {
+        mode,
+        trace,
+        debug,
+        error,
+    } = Cli::parse();
 
-    init_tracing(trace, debug)?;
+    init_tracing(trace, debug, error)?;
 
     let project_dirs = directories::ProjectDirs::from("com", "tukanoid", "leaper")
         .ok_or(LeaperError::NoProjectDirs)?;
@@ -219,25 +175,52 @@ fn main() -> LeaperResult<()> {
     Ok(())
 }
 
-fn init_tracing(trace: bool, debug: bool) -> LeaperResult<()> {
-    let level = (cfg!(feature = "profile") || trace)
-        .then_some("trace")
+fn init_tracing(trace: bool, debug: bool, error: bool) -> LeaperResult<()> {
+    let level = error
+        .then_some("error")
+        .or_else(|| (cfg!(feature = "profile") || trace).then_some("trace"))
         .or_else(|| (cfg!(debug_assertions) || debug).then_some("debug"))
         .unwrap_or("info");
     let directives = ["leaper"]
         .map(|target| format!("{target}={level}"))
         .join(",");
 
-    let registry = tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::fmt::layer()
-                .pretty()
-                .with_span_events(FmtSpan::CLOSE | FmtSpan::NEW),
-        )
-        .with(tracing_subscriber::EnvFilter::new(directives));
+    #[cfg(not(feature = "profile"))]
+    let layer = tracing_subscriber::fmt::layer().pretty().with_span_events(
+        tracing_subscriber::fmt::format::FmtSpan::CLOSE
+            | tracing_subscriber::fmt::format::FmtSpan::NEW,
+    );
 
     #[cfg(feature = "profile")]
-    let registry = registry.with(tracing_tracy::TracyLayer::default());
+    let layer = {
+        use opentelemetry::trace::TracerProvider;
+
+        let exporter = opentelemetry_zipkin::ZipkinExporter::builder().build()?;
+
+        let batch = opentelemetry_sdk::trace::BatchSpanProcessor::builder(exporter)
+            .with_batch_config(
+                opentelemetry_sdk::trace::BatchConfigBuilder::default()
+                    .with_max_queue_size(4096)
+                    .build(),
+            )
+            .build();
+
+        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+            .with_span_processor(batch)
+            .with_resource(
+                opentelemetry_sdk::Resource::builder_empty()
+                    .with_service_name("leaper")
+                    .build(),
+            )
+            .build();
+        let tracer = provider.tracer("leaper");
+
+        tracing_opentelemetry::layer().with_tracer(tracer)
+    };
+
+    let registry = tracing_subscriber::registry()
+        .with(layer)
+        .with(tracing_subscriber::EnvFilter::new(directives));
 
     registry.try_init()?;
 
@@ -280,4 +263,7 @@ enum LeaperError {
 
     #[lerr(str = "[tokio::mpmc::channel] {0}")]
     TokioMPMCChannel(#[lerr(from, wrap = Arc)] tokio_mpmc::ChannelError),
+
+    #[lerr(str = "[opentelemetry] {0}", profile)]
+    OpenTelemetry(#[lerr(from, wrap = Arc)] opentelemetry_zipkin::ExporterBuildError),
 }

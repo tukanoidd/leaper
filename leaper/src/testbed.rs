@@ -8,4 +8,6 @@ pub struct TestbedCli {
     pub trace: bool,
     #[arg(long)]
     pub debug: bool,
+    #[arg(long)]
+    pub error: bool,
 }

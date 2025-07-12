@@ -17,14 +17,3 @@ pub struct RelateQuery {
     #[builder(into)]
     out: RecordId,
 }
-
-#[derive(bon::Builder, SurrealQuery)]
-#[query(
-    output = "Option<RecordId>",
-    error = DBError,
-    sql = "(CREATE {table}).id"
-)]
-pub struct CreateEmptyIdQuery {
-    #[builder(into)]
-    table: surrealdb::sql::Table,
-}

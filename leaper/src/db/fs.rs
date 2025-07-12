@@ -1,60 +1,114 @@
 use std::{path::PathBuf, sync::Arc};
 
-use async_walkdir::Filtering;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use surrealdb::RecordId;
 use surrealdb_extras::{SurrealQuery, SurrealTable};
-use tokio::task::JoinSet;
+use tracing::Instrument;
+use vfs::async_vfs::{AsyncPhysicalFS, AsyncVfsPath};
 
-use crate::db::{
-    DB, DBError,
-    queries::{CreateEmptyIdQuery, RelateQuery},
-};
+use crate::db::{DB, DBError, InstrumentedSurrealQuery, queries::RelateQuery};
 
-#[tracing::instrument(skip(db), level = "trace")]
-pub async fn index(root: impl Into<PathBuf> + std::fmt::Debug, db: Arc<DB>) -> FSResult<()> {
-    let db_clone = db.clone();
-    let mut walkdir = async_walkdir::WalkDir::new(root.into()).filter(move |entry| {
-        let db = db_clone.clone();
-
-        async move {
-            if FindNodeByPathQuery::builder()
-                .path(entry.path())
-                .build()
-                .execute(db)
-                .await
-                .ok()
-                .map(|x| x.is_some())
-                .unwrap_or_default()
-            {
-                return Filtering::Ignore;
-            }
-
-            async_walkdir::Filtering::Continue
-        }
-    });
-
-    let mut tasks = JoinSet::new();
-
-    while let Some(entry) = walkdir.next().await {
-        match entry {
-            Ok(entry) => {
-                let db = db.clone();
-
-                tasks.spawn(async move {
-                    if let Err(err) = FSNode::add_db(entry.path(), db).await {
-                        tracing::error!("Failed to add fs_node: {err}");
+#[macro_export]
+macro_rules! check_stop {
+    ([$error:ty] $stop_recv:expr) => {
+        match $stop_recv.is_empty() {
+            true => {}
+            false => match $stop_recv.recv().await {
+                Ok(_) => return Err(<$error>::InterruptedByParent),
+                Err(err) => match err {
+                    tokio_mpmc::ChannelError::ChannelClosed => {
+                        return Err(<$error>::LostConnectionToParent)
                     }
-                });
-            }
-            Err(err) => {
-                tracing::trace!("WARN: Failed to get an entry: {err}");
-            }
+                    _ => unreachable!(),
+                },
+            },
         }
+    };
+    (@opt [$error:ty] $stop_recv:expr) => {
+        match $stop_recv.is_empty() {
+            true => {}
+            false => match $stop_recv.recv().await {
+                Ok(_) => return None,
+                Err(err) => match err {
+                    tokio_mpmc::ChannelError::ChannelClosed => return None,
+                    _ => unreachable!(),
+                },
+            },
+        }
+    };
+}
+
+#[bon::builder]
+pub async fn index(
+    #[builder(into)] root: PathBuf,
+    db: Arc<DB>,
+    #[builder(default)] parents: bool,
+    pre_filter: impl Fn(&PathBuf) -> Option<bool> + Clone + Send + Sync + 'static,
+    mut stop_receiver: Option<tokio_mpmc::Receiver<()>>,
+) -> FSResult<()> {
+    if let Some(stop_receiver) = &mut stop_receiver {
+        check_stop!([FSError] stop_receiver);
     }
 
-    tasks.join_all().await;
+    let mut walkdir = AsyncVfsPath::new(AsyncPhysicalFS::new(&root))
+        .walk_dir()
+        .await?
+        .filter_map(|path| {
+            let stop_receiver = stop_receiver.clone();
+            let pre_filter = pre_filter.clone();
+            let db = db.clone();
+            let root = root.clone();
+
+            async move {
+                if let Some(stop_receiver) = stop_receiver {
+                    check_stop!(@opt [FSError] stop_receiver);
+                }
+
+                let path = match path {
+                    Ok(path) => path,
+                    Err(err) => {
+                        tracing::error!("{err}");
+                        return None;
+                    }
+                };
+
+                let path_real = root.join(path.as_str().trim_start_matches('/'));
+
+                if let Some(res) = pre_filter.clone()(&path_real) {
+                    if !res {
+                        return None;
+                    }
+                }
+
+                if let Err(err) = FSNode::add_db()
+                    .path(&path_real)
+                    .db(db)
+                    .parents(parents)
+                    .call()
+                    .instrument(tracing::debug_span!(
+                        "add fs_node",
+                        path = &path_real.to_string_lossy().to_string()
+                    ))
+                    .await
+                {
+                    tracing::error!("Failed to add fs_node: {err}");
+                }
+
+                Some(())
+            }
+        })
+        .boxed();
+
+    if let Some(stop_receiver) = stop_receiver.clone() {
+        check_stop!([FSError] stop_receiver);
+    }
+
+    while let Some(_) = walkdir.next().await {
+        if let Some(stop_receiver) = stop_receiver.clone() {
+            check_stop!([FSError] stop_receiver);
+        }
+    }
 
     Ok(())
 }
@@ -66,7 +120,6 @@ pub async fn index(root: impl Into<PathBuf> + std::fmt::Debug, db: Arc<DB>) -> F
         "DEFINE TABLE is_symlink TYPE RELATION",
         "DEFINE TABLE is_dir TYPE RELATION",
 
-
         "DEFINE TABLE is_parent_of TYPE RELATION"
     )
 )]
@@ -76,13 +129,18 @@ pub struct FSNode {
     pub name: String,
 }
 
+#[bon::bon]
 impl FSNode {
-    #[tracing::instrument(skip(db), level = "debug")]
-    async fn add_db(path: PathBuf, db: Arc<DB>) -> FSResult<RecordId> {
+    #[builder]
+    async fn add_db(
+        #[builder(into)] path: PathBuf,
+        db: Arc<DB>,
+        parents: bool,
+    ) -> FSResult<RecordId> {
         if let Some(id) = FindNodeByPathQuery::builder()
             .path(&path)
             .build()
-            .execute(db.clone())
+            .instrumented_execute(db.clone())
             .await?
         {
             return Ok(id.clone());
@@ -91,40 +149,78 @@ impl FSNode {
         let fs_node_id = CreateFsNodeQuery::builder()
             .path(path.clone())
             .build()
-            .execute(db.clone())
+            .instrumented_execute(db.clone())
+            .instrument(tracing::debug_span!(
+                "Create fs_node",
+                path = &path.to_string_lossy().to_string()
+            ))
             .await?
             .expect("Should be able to create an fs node here");
 
         if path.is_symlink() {
-            Symlink::add_db(path.clone(), fs_node_id.clone(), db.clone()).await?;
+            Symlink::add_db()
+                .path(path.clone())
+                .fs_node_id(fs_node_id.clone())
+                .db(db.clone())
+                .parents(parents)
+                .call()
+                .instrument(tracing::debug_span!(
+                    "Add symlink",
+                    path = &path.to_string_lossy().to_string()
+                ))
+                .await?;
         } else if path.is_dir() {
-            Directory::add_db(fs_node_id.clone(), db.clone()).await?;
+            Directory::add_db(fs_node_id.clone(), db.clone())
+                .instrument(tracing::debug_span!(
+                    "Add directory",
+                    path = &path.to_string_lossy().to_string()
+                ))
+                .await?;
         } else if path.is_file() {
-            File::add_db(path.clone(), fs_node_id.clone(), db.clone()).await?;
+            File::add_db(path.clone(), fs_node_id.clone(), db.clone())
+                .instrument(tracing::debug_span!(
+                    "Add file",
+                    path = &path.to_string_lossy().to_string()
+                ))
+                .await?;
         }
 
-        if let Some(parent) = path.parent() {
-            Self::add_parent(parent.to_path_buf(), fs_node_id.clone(), db).await?;
+        if parents {
+            if let Some(parent) = path.parent() {
+                Self::add_parent(parent.to_path_buf(), fs_node_id.clone(), db)
+                    .instrument(tracing::debug_span!(
+                        "Add parent",
+                        path = &path.to_string_lossy().to_string(),
+                        parent = &parent.to_string_lossy().to_string()
+                    ))
+                    .await?;
+            }
         }
 
         Ok(fs_node_id)
     }
 
-    #[tracing::instrument(skip(db), level = "trace")]
     async fn add_parent(
         path: PathBuf,
         child_fs_node_id: RecordId,
         db: Arc<DB>,
     ) -> FSResult<RecordId> {
         // Should be fine as we only call this function on parent directories of nodes
-        let parent_fs_node_id: RecordId = Box::pin(FSNode::add_db(path, db.clone())).await?;
+        let parent_fs_node_id: RecordId = Box::pin(
+            FSNode::add_db()
+                .path(path)
+                .db(db.clone())
+                .parents(true)
+                .call(),
+        )
+        .await?;
 
         RelateQuery::builder()
             .in_(parent_fs_node_id.clone())
             .table("is_parent_of")
             .out(child_fs_node_id)
             .build()
-            .execute(db)
+            .instrumented_execute(db)
             .await?;
 
         Ok(parent_fs_node_id)
@@ -135,7 +231,7 @@ impl FSNode {
 #[query(
     output = "Option<RecordId>",
     error = FSError,
-    sql = "SELECT VALUE id FROM ONLY fs_node WHERE path = {path} LIMIT 1"
+    sql = "SELECT VALUE id FROM ONLY fs_node WHERE path == {path} LIMIT 1"
 )]
 struct FindNodeByPathQuery {
     #[builder(into)]
@@ -176,21 +272,11 @@ pub struct Directory {
 }
 
 impl Directory {
-    #[tracing::instrument(skip(db), level = "trace")]
     async fn add_db(fs_node_id: RecordId, db: Arc<DB>) -> FSResult<()> {
-        let dir_id = CreateEmptyIdQuery::builder()
-            .table("directory")
+        CreateDirectoryQuery::builder()
+            .fs_node(fs_node_id)
             .build()
-            .execute(db.clone())
-            .await?
-            .expect("Should be able to create a dir entry here");
-
-        RelateQuery::builder()
-            .in_(fs_node_id)
-            .table("is_dir")
-            .out(dir_id)
-            .build()
-            .execute(db)
+            .instrumented_execute(db)
             .await?;
 
         // TODO: checks
@@ -199,14 +285,37 @@ impl Directory {
     }
 }
 
+#[derive(bon::Builder, SurrealQuery)]
+#[query(
+    check,
+    error = FSError,
+    sql = "
+        BEGIN TRANSACTION;
+
+        LET $dir = (CREATE directory).id;
+        RELATE {fs_node}->is_dir->$dir;
+
+        COMMIT TRANSACTION;
+    "
+)]
+struct CreateDirectoryQuery {
+    fs_node: RecordId,
+}
+
 #[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = file,
     sql(
+        // fs_nodes->
         "DEFINE TABLE is_file TYPE RELATION",
+
+        // file->
+        "DEFINE TABLE is_icon TYPE RELATION",
+        "DEFINE TABLE is_app TYPE RELATION",
+
         "
         DEFINE EVENT icon_file_added ON TABLE is_file
-            WHEN $event = \"CREATE\"
+            WHEN $event = 'CREATE'
                 && array::any([
                     'png',
                     'jpg', 'jpeg',
@@ -219,35 +328,56 @@ impl Directory {
             THEN {
                 LET $fs_node = $value.in;
                 LET $file = $value.out;
-                LET $icon = CREATE icon SET
-                    name = $fs_node.name,
+                LET $dims = array::filter(
+                    string::split($fs_node.path, '/'), 
+                    |$str| string::contains($str, 'x')
+                )
+                    .map(|$str| string::split($str, 'x'))
+                    .filter(|$split| array::len($split) == 2 && array::all($split, |$dim| string::is::numeric($dim)))
+                    .map(|$split| {{
+                        width: <int>($split[0]),
+                        height: <int>($split[0])
+                    }})[0];
+                LET $icon = (CREATE icon SET
+                    name = ($file
+                        .stem
+                        .replace('-default', '')
+                        .replace('-symbolic', '')
+                        .replace('-generic', '')),
                     path = $fs_node.path,
-                    svg = ($value.ext == 'svg'),
-                    xpm = ($value.ext == 'xpm');
+                    svg = ($file.ext == 'svg'),
+                    xpm = ($file.ext == 'xpm'),
+                    dims = $dims).id;
                 RELATE $file->is_icon->$icon;
             }
         ",
-        "DEFINE TABLE is_icon TYPE RELATION"
     )
 )]
 pub struct File {
     id: RecordId,
+    stem: String,
     ext: Option<String>,
 }
 
 impl File {
-    #[tracing::instrument(skip(db), level = "trace")]
     async fn add_db(path: PathBuf, fs_node_id: RecordId, db: Arc<DB>) -> FSResult<()> {
         CreateFileQuery::builder()
-            .fs_node(fs_node_id)
+            .fs_node(fs_node_id.clone())
             .maybe_ext(
                 path.extension()
                     .and_then(|s| s.to_str())
                     .map(|s| s.to_owned()),
             )
+            .stem(
+                path.file_stem()
+                    .and_then(|x| x.to_str())
+                    .unwrap_or("[ERROR]")
+                    .to_string(),
+            )
             .build()
-            .execute(db.clone())
-            .await?;
+            .instrumented_execute(db.clone())
+            .await
+            .inspect_err(|err| tracing::error!("File {{ {path:?}->{fs_node_id} }}, {err}"))?;
 
         Ok(())
     }
@@ -258,13 +388,20 @@ impl File {
     check,
     error = FSError,
     sql = "
-        LET $file = (CREATE file SET ext = {ext});
+        BEGIN TRANSACTION;
+
+        LET $file = (CREATE file SET ext = {ext}, stem = {stem}).id;
         RELATE {fs_node}->is_file->$file;
-        RETURN $file.id
+
+        COMMIT TRANSACTION;
+
+        RETURN $file.id;
     "
 )]
 struct CreateFileQuery {
     fs_node: RecordId,
+    #[builder(into)]
+    stem: String,
     #[builder(into)]
     ext: Option<String>,
 }
@@ -278,9 +415,15 @@ pub struct Symlink {
     id: RecordId,
 }
 
+#[bon::bon]
 impl Symlink {
-    #[tracing::instrument(skip(db), level = "trace")]
-    async fn add_db(path: PathBuf, fs_node_id: RecordId, db: Arc<DB>) -> FSResult<()> {
+    #[builder]
+    async fn add_db(
+        #[builder(into)] path: PathBuf,
+        fs_node_id: RecordId,
+        db: Arc<DB>,
+        parents: bool,
+    ) -> FSResult<()> {
         let links_to = match path.read_link() {
             Ok(path) => path,
             Err(err) => {
@@ -289,40 +432,63 @@ impl Symlink {
             }
         };
 
-        let symlink_id = CreateEmptyIdQuery::builder()
-            .table("symlink")
-            .build()
-            .execute(db.clone())
-            .await?
-            .expect("Should be able to create a symlink entry here");
+        let symlinked_fs_node: RecordId = Box::pin(
+            FSNode::add_db()
+                .path(links_to)
+                .db(db.clone())
+                .parents(parents)
+                .call()
+                .instrument(tracing::debug_span!("Adding symlinked node")),
+        )
+        .await?;
 
-        RelateQuery::builder()
-            .in_(fs_node_id)
-            .table("is_symlink")
-            .out(symlink_id.clone())
+        CreateSymlinkQuery::builder()
+            .fs_node(fs_node_id)
+            .symlinked_fs_node(symlinked_fs_node)
             .build()
-            .execute(db.clone())
-            .await?;
-
-        let symlinked_fs_node: RecordId = Box::pin(FSNode::add_db(links_to, db.clone())).await?;
-
-        RelateQuery::builder()
-            .in_(symlink_id)
-            .table("is_symlink_of")
-            .out(symlinked_fs_node)
-            .build()
-            .execute(db)
+            .instrumented_execute(db)
+            .instrument(tracing::debug_span!("Creating symlink node"))
             .await?;
 
         Ok(())
     }
 }
 
+#[derive(bon::Builder, SurrealQuery)]
+#[query(
+    check,
+    error = FSError,
+    sql = "
+        BEGIN TRANSACTION;
+
+        LET $symlink = (CREATE symlink).id;
+        RELATE {fs_node}->is_symlink->$symlink;
+        RELATE $symlink->is_symlink_of->{symlinked_fs_node};
+
+        COMMIT TRANSACTION;
+    "
+)]
+struct CreateSymlinkQuery {
+    fs_node: RecordId,
+    symlinked_fs_node: RecordId,
+}
+
 #[macros::lerror]
 #[lerr(prefix = "[leaper::db::fs]", result_name = FSResult)]
 pub enum FSError {
+    #[lerr(str = "Interrupted by parent")]
+    InterruptedByParent,
+    #[lerr(str = "Lost connection to the parent")]
+    LostConnectionToParent,
+
     #[lerr(str = "[std::io] {0}")]
     IO(#[lerr(from, wrap = Arc)] std::io::Error),
+
+    #[lerr(str = "[vfs] {0}")]
+    VFS(#[lerr(from, wrap = Arc)] vfs::VfsError),
+
+    #[lerr(str = "[tokio::task::join] {0}")]
+    Join(#[lerr(from, wrap = Arc)] tokio::task::JoinError),
 
     #[lerr(str = "[surreal] {0}")]
     Surreal(#[lerr(from, wrap = Arc)] surrealdb::Error),

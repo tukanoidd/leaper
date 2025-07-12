@@ -12,7 +12,8 @@ use surrealdb::{
     Surreal,
     opt::{Config, capabilities::Capabilities},
 };
-use surrealdb_extras::{SurrealTableInfo, use_ns_db};
+use surrealdb_extras::{SurrealQuery, SurrealTableInfo, use_ns_db};
+use tracing::{Instrument, debug_span};
 
 use crate::{
     LeaperError, LeaperResult,
@@ -72,6 +73,23 @@ pub async fn init_db(
     .await?;
 
     Ok(Arc::new(db))
+}
+
+pub trait InstrumentedSurrealQuery: SurrealQuery {
+    async fn instrumented_execute(self, db: Arc<DB>) -> Result<Self::Output, Self::Error>;
+}
+
+impl<Q> InstrumentedSurrealQuery for Q
+where
+    Q: SurrealQuery,
+    Q::Error: std::fmt::Display,
+{
+    async fn instrumented_execute(self, db: Arc<DB>) -> Result<Self::Output, Self::Error> {
+        self.execute(db)
+            .instrument(debug_span!("Calling query", query = Self::QUERY_STR))
+            .await
+            .inspect_err(|err| tracing::error!("{err}"))
+    }
 }
 
 #[lerror]
