@@ -48,7 +48,7 @@ zbus = { version = "5.7.1", features = ["tokio"] }
 
 directories = "6.0"
 shlex = "1.3.0"
-vfs = { version = "0.12.1", features = ["async-vfs"] }
+vfs = { version = "0.12.2", features = ["async-vfs"] }
 image = "0.25.6"
 freedesktop-desktop-entry = "0.7.13"
 
