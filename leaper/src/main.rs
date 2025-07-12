@@ -5,29 +5,33 @@ mod db;
 
 use std::sync::Arc;
 
-use clap::Parser;
-use directories::ProjectDirs;
 use iced::Executor;
-use iced_aw::iced_fonts::REQUIRED_FONT_BYTES;
-use iced_fonts::NERD_FONT_BYTES;
-use iced_layershell::{
-    build_pattern::MainSettings,
-    reexport::{Anchor, KeyboardInteractivity, Layer},
-    settings::{LayerShellSettings, Settings, StartMode},
-};
-use tracing_subscriber::{fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{app::App, cli::Cli, config::Config};
+use clap::Parser;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 fn main() -> LeaperResult<()> {
+    use iced_layershell::{
+        build_pattern::MainSettings,
+        reexport::{Anchor, KeyboardInteractivity, Layer},
+        settings::{LayerShellSettings, Settings, StartMode},
+    };
+
+    use crate::{app::App, cli::Cli, config::Config};
+
     miette::set_panic_hook();
 
-    let Cli { mode, trace, debug } = Cli::parse();
+    let Cli {
+        mode,
+        trace,
+        debug,
+        error,
+    } = Cli::parse();
 
-    init_tracing(trace, debug)?;
+    init_tracing(trace, debug, error)?;
 
-    let project_dirs =
-        ProjectDirs::from("com", "tukanoid", "leaper").ok_or(LeaperError::NoProjectDirs)?;
+    let project_dirs = directories::ProjectDirs::from("com", "tukanoid", "leaper")
+        .ok_or(LeaperError::NoProjectDirs)?;
 
     let config = Config::open(&project_dirs)?;
 
@@ -73,12 +77,39 @@ fn main() -> LeaperResult<()> {
         virtual_keyboard_support,
     };
 
+    struct LeaperRuntime(tokio::runtime::Runtime);
+
+    impl Executor for LeaperRuntime {
+        fn new() -> Result<Self, futures::io::Error>
+        where
+            Self: Sized,
+        {
+            Ok(Self(
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .thread_stack_size(10 * 1024 * 1024)
+                    .build()?,
+            ))
+        }
+
+        fn spawn(
+            &self,
+            future: impl Future<Output = ()> + iced::advanced::graphics::futures::MaybeSend + 'static,
+        ) {
+            <tokio::runtime::Runtime as Executor>::spawn(&self.0, future)
+        }
+
+        fn enter<R>(&self, f: impl FnOnce() -> R) -> R {
+            <tokio::runtime::Runtime as Executor>::enter(&self.0, f)
+        }
+    }
+
     iced_layershell::build_pattern::application("leaper", App::update, App::view)
         .settings(settings)
         .theme(App::theme)
         .subscription(App::subscription)
-        .font(REQUIRED_FONT_BYTES)
-        .font(NERD_FONT_BYTES)
+        .font(iced_fonts::REQUIRED_FONT_BYTES)
+        .font(iced_fonts::NERD_FONT_BYTES)
         .executor::<LeaperRuntime>()
         .run_with(move || {
             App::builder()
@@ -91,52 +122,52 @@ fn main() -> LeaperResult<()> {
     Ok(())
 }
 
-struct LeaperRuntime(tokio::runtime::Runtime);
-
-impl Executor for LeaperRuntime {
-    fn new() -> Result<Self, futures::io::Error>
-    where
-        Self: Sized,
-    {
-        Ok(Self(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .thread_stack_size(10 * 1024 * 1024)
-                .build()?,
-        ))
-    }
-
-    fn spawn(
-        &self,
-        future: impl Future<Output = ()> + iced::advanced::graphics::futures::MaybeSend + 'static,
-    ) {
-        <tokio::runtime::Runtime as Executor>::spawn(&self.0, future)
-    }
-
-    fn enter<R>(&self, f: impl FnOnce() -> R) -> R {
-        <tokio::runtime::Runtime as Executor>::enter(&self.0, f)
-    }
-}
-
-fn init_tracing(trace: bool, debug: bool) -> LeaperResult<()> {
-    let level = (cfg!(feature = "profile") || trace)
-        .then_some("trace")
+fn init_tracing(trace: bool, debug: bool, error: bool) -> LeaperResult<()> {
+    let level = error
+        .then_some("error")
+        .or_else(|| (cfg!(feature = "profile") || trace).then_some("trace"))
         .or_else(|| (cfg!(debug_assertions) || debug).then_some("debug"))
         .unwrap_or("info");
-    let directives = ["leaper", "leaper_apps", "leaper_db"]
+    let directives = ["leaper"]
         .map(|target| format!("{target}={level}"))
         .join(",");
 
-    let registry = tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::fmt::layer()
-                .pretty()
-                .with_span_events(FmtSpan::CLOSE | FmtSpan::NEW),
-        )
-        .with(tracing_subscriber::EnvFilter::new(directives));
+    #[cfg(not(feature = "profile"))]
+    let layer = tracing_subscriber::fmt::layer().pretty().with_span_events(
+        tracing_subscriber::fmt::format::FmtSpan::CLOSE
+            | tracing_subscriber::fmt::format::FmtSpan::NEW,
+    );
 
     #[cfg(feature = "profile")]
-    let registry = registry.with(tracing_tracy::TracyLayer::default());
+    let layer = {
+        use opentelemetry::trace::TracerProvider;
+
+        let exporter = opentelemetry_zipkin::ZipkinExporter::builder().build()?;
+
+        let batch = opentelemetry_sdk::trace::BatchSpanProcessor::builder(exporter)
+            .with_batch_config(
+                opentelemetry_sdk::trace::BatchConfigBuilder::default()
+                    .with_max_queue_size(4096)
+                    .build(),
+            )
+            .build();
+
+        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+            .with_span_processor(batch)
+            .with_resource(
+                opentelemetry_sdk::Resource::builder_empty()
+                    .with_service_name("leaper")
+                    .build(),
+            )
+            .build();
+        let tracer = provider.tracer("leaper");
+
+        tracing_opentelemetry::layer().with_tracer(tracer)
+    };
+
+    let registry = tracing_subscriber::registry()
+        .with(layer)
+        .with(tracing_subscriber::EnvFilter::new(directives));
 
     registry.try_init()?;
 
@@ -179,4 +210,7 @@ enum LeaperError {
 
     #[lerr(str = "[tokio::mpmc::channel] {0}")]
     TokioMPMCChannel(#[lerr(from, wrap = Arc)] tokio_mpmc::ChannelError),
+
+    #[lerr(str = "[opentelemetry] {0}", profile)]
+    OpenTelemetry(#[lerr(from, wrap = Arc)] opentelemetry_zipkin::ExporterBuildError),
 }

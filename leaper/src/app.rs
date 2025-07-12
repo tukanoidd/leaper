@@ -8,12 +8,12 @@ use std::sync::Arc;
 use directories::ProjectDirs;
 use iced::{
     Event, Task,
-    futures::{SinkExt, StreamExt},
+    futures::SinkExt,
     keyboard::{self, Key, key},
     stream,
     widget::text_input,
 };
-use surrealdb::Notification;
+use tokio_stream::StreamExt;
 
 use crate::{
     LeaperResult,
@@ -25,7 +25,11 @@ use crate::{
     },
     cli,
     config::Config,
-    db::{DB, apps::AppWithIcon, init_db},
+    db::{
+        DB, InstrumentedSurrealQuery,
+        apps::{GetLiveAppIconUpdates, GetLiveAppWithIconsQuery},
+        init_db,
+    },
 };
 
 pub type AppTheme = iced::Theme;
@@ -193,67 +197,20 @@ impl App {
                     AppSubscription::run_with_id(
                         "live_apps",
                         stream::channel(1, |mut msg_sender| async move {
-                            match db
-                                .query("LIVE SELECT * FROM entries FETCH icon")
-                                .await
-                                .expect("Should be able to get live stream from app entries table")
-                                .stream::<Notification<AppWithIcon>>(0)
+                            let app_icons_stream = GetLiveAppWithIconsQuery
+                                .instrumented_execute(db.clone())
+                                .await;
+                            let app_icons_updates_stream =
+                                GetLiveAppIconUpdates.instrumented_execute(db.clone()).await;
+
+                            let mut stream = match app_icons_stream
+                                .and_then(|x| app_icons_updates_stream.map(|y| (x, y)))
                             {
-                                Ok(mut stream) => {
-                                    while let Some(notification) = stream.next().await {
-                                        match notification {
-                                            Ok(notification) => match notification.action {
-                                                surrealdb::Action::Create
-                                                | surrealdb::Action::Update => {
-                                                    if let Err(err) = msg_sender
-                                                        .send(
-                                                            AppModeMsg::Apps(AppsMsg::AddApp(
-                                                                notification.data,
-                                                            ))
-                                                            .into(),
-                                                        )
-                                                        .await
-                                                    {
-                                                        tracing::error!(
-                                                            "Failed to send add app from live app table subscription: {err}"
-                                                        );
-
-                                                        if let Err(err) = msg_sender
-                                                            .send(AppMsg::Exit {
-                                                                app_search_stop_sender: stop_sender
-                                                                    .clone(),
-                                                            })
-                                                            .await
-                                                        {
-                                                            tracing::error!(
-                                                                "Failed to send exit message from live app table subscription: {err}"
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                                _ => unreachable!(),
-                                            },
-                                            Err(err) => {
-                                                tracing::error!(
-                                                    "Failed to get notification from apps live table: {err}"
-                                                );
-
-                                                if let Err(err) = msg_sender
-                                                    .send(AppMsg::Exit {
-                                                        app_search_stop_sender: stop_sender.clone(),
-                                                    })
-                                                    .await
-                                                {
-                                                    tracing::error!(
-                                                        "Failed to send exit message from live app table subscription: {err}"
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
+                                Ok((app_icons, app_icons_updates)) => {
+                                    app_icons.merge(app_icons_updates)
                                 }
                                 Err(err) => {
-                                    tracing::error!("Failed to get live table for apps: {err}");
+                                    tracing::error!("{err}");
 
                                     if let Err(err) = msg_sender
                                         .send(AppMsg::Exit {
@@ -265,6 +222,62 @@ impl App {
                                             "Failed to send exit message from live app table subscription: {err}"
                                         );
                                     }
+
+                                    return;
+                                }
+                            };
+
+                            while let Some(notification) = stream.next().await {
+                                let notification = match notification {
+                                    Ok(notification) => notification,
+                                    Err(err) => {
+                                        tracing::error!(
+                                            "Failed to get notification from apps live table: {err}"
+                                        );
+
+                                        if let Err(err) = msg_sender
+                                            .send(AppMsg::Exit {
+                                                app_search_stop_sender: stop_sender.clone(),
+                                            })
+                                            .await
+                                        {
+                                            tracing::error!(
+                                                "Failed to send exit message from live app table subscription: {err}"
+                                            );
+                                        }
+
+                                        return;
+                                    }
+                                };
+
+                                match notification.action {
+                                    surrealdb::Action::Create | surrealdb::Action::Update => {
+                                        if let Err(err) = msg_sender
+                                            .send(
+                                                AppModeMsg::Apps(AppsMsg::AddApp(
+                                                    notification.data,
+                                                ))
+                                                .into(),
+                                            )
+                                            .await
+                                        {
+                                            tracing::error!(
+                                                "Failed to send add app from live app table subscription: {err}"
+                                            );
+
+                                            if let Err(err) = msg_sender
+                                                .send(AppMsg::Exit {
+                                                    app_search_stop_sender: stop_sender.clone(),
+                                                })
+                                                .await
+                                            {
+                                                tracing::error!(
+                                                    "Failed to send exit message from live app table subscription: {err}"
+                                                );
+                                            }
+                                        }
+                                    }
+                                    _ => unreachable!(),
                                 }
                             }
                         }),

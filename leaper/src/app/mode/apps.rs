@@ -17,10 +17,8 @@ use iced::{
 use iced_aw::Spinner;
 use iced_fonts::{NERD_FONT, Nerd, nerd::icon_to_string};
 use itertools::Itertools;
-use tracing::Instrument;
 
 use crate::{
-    LeaperResult,
     app::{
         AppTask,
         mode::{
@@ -29,12 +27,15 @@ use crate::{
         },
         style::{app_scrollable_style, app_text_input_style},
     },
-    db::{DB, apps::AppWithIcon},
+    db::{
+        DB, InstrumentedSurrealQuery,
+        apps::{AppWithIcon, GetAppWithIconsQuery},
+    },
 };
 
 type AppsIcons = Vec<AppWithIcon>;
 
-type InitAppsIconsResult = LeaperResult<AppsIcons>;
+type InitAppsIconsResult = AppsResult<AppsIcons>;
 type LoadAppsIconsResult = AppsResult<()>;
 
 #[derive(Default)]
@@ -63,24 +64,7 @@ impl Apps {
 
                 return AppModeTask::batch([
                     AppModeTask::perform(
-                        {
-                            let db = db.clone();
-                            let span = tracing::trace_span!("get_cached_list");
-
-                            async move {
-                                Ok(db
-                                    .query(
-                                        "
-                                        SELECT * FROM entries
-                                            ORDER BY name ASC
-                                            FETCH icon
-                                        ",
-                                    )
-                                    .await?
-                                    .take(0)?)
-                            }
-                            .instrument(span)
-                        },
+                        GetAppWithIconsQuery.instrumented_execute(db),
                         AppsMsg::InitedApps,
                     )
                     .map(Into::into),
@@ -92,7 +76,7 @@ impl Apps {
                     self.apps = apps;
 
                     tracing::trace!(
-                        "Initialized apps list from cache [{} entries]",
+                        "Initialized apps list from cache [{} apps]",
                         self.apps.len()
                     );
                 }

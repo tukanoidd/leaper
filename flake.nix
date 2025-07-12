@@ -44,7 +44,7 @@
               cargo-features-manager
               cargo-modules
 
-              tracy
+              surrealdb
             ]);
         });
 

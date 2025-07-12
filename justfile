@@ -1,8 +1,14 @@
-profile:
-    cargo run -p leaper --features profile
+run_ws *args:
+    cargo run -p leaper --features db-websocket -- {{args}}
 
-run_ws:
-    cargo run -p leaper --features db-websocket
+db:
+    surreal start --unauthenticated
 
-docker_db:
-    docker run --rm --pull always -p 8000:8000 surrealdb/surrealdb:latest start --unauthenticated
+profile *args:
+    cargo run -p leaper --features profile -- {{args}}
+
+profile_ws *args:
+    cargo run -p leaper --features db-websocket,profile -- {{args}}
+
+zipkin:
+    docker run -d -p 9411:9411 openzipkin/zipkin

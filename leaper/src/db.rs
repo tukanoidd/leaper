@@ -1,16 +1,26 @@
 pub mod apps;
+pub mod fs;
+pub mod queries;
 
 use std::sync::Arc;
 
 #[cfg(not(feature = "db-websocket"))]
 use directories::ProjectDirs;
 
-use surrealdb::{Surreal, opt::Config};
-use surrealdb_extras::{SurrealTableInfo, use_ns_db};
+use macros::lerror;
+use surrealdb::{
+    Surreal,
+    opt::{Config, capabilities::Capabilities},
+};
+use surrealdb_extras::{SurrealQuery, SurrealTableInfo, use_ns_db};
+use tracing::{Instrument, debug_span};
 
 use crate::{
     LeaperError, LeaperResult,
-    db::apps::{AppEntry, AppIcon},
+    db::{
+        apps::{AppEntry, AppIcon},
+        fs::{Directory, FSNode, File, Symlink},
+    },
 };
 
 #[cfg(not(feature = "db-websocket"))]
@@ -36,17 +46,55 @@ pub async fn init_db(
     #[cfg(not(feature = "db-websocket"))]
     let endpoint = project_dirs.data_local_dir().join("db");
 
-    let connection = DB::new::<Schema>((endpoint, Config::default().strict()));
+    let connection = DB::new::<Schema>((
+        endpoint,
+        Config::default()
+            .capabilities(Capabilities::all().with_all_experimental_features_allowed())
+            .strict(),
+    ));
     let db = use_ns_db(
         connection,
         "leaper",
         "data",
         vec![
-            AppEntry::register().map_err(LeaperError::SurrealExtra)?,
-            AppIcon::register().map_err(LeaperError::SurrealExtra)?,
-        ],
+            // FS
+            FSNode::register(),
+            Directory::register(),
+            File::register(),
+            Symlink::register(),
+            // Apps & Icons
+            AppEntry::register(),
+            AppIcon::register(),
+        ]
+        .into_iter()
+        .map(|res| res.map_err(LeaperError::SurrealExtra))
+        .collect::<LeaperResult<Vec<_>>>()?,
     )
     .await?;
 
     Ok(Arc::new(db))
+}
+
+pub trait InstrumentedSurrealQuery: SurrealQuery {
+    async fn instrumented_execute(self, db: Arc<DB>) -> Result<Self::Output, Self::Error>;
+}
+
+impl<Q> InstrumentedSurrealQuery for Q
+where
+    Q: SurrealQuery,
+    Q::Error: std::fmt::Display,
+{
+    async fn instrumented_execute(self, db: Arc<DB>) -> Result<Self::Output, Self::Error> {
+        self.execute(db)
+            .instrument(debug_span!("Calling query", query = Self::QUERY_STR))
+            .await
+            .inspect_err(|err| tracing::error!("{err}"))
+    }
+}
+
+#[lerror]
+#[lerr(prefix = "[leaper::db]", result_name = DBResult)]
+pub enum DBError {
+    #[lerr(str = "[surrealdb] {0}")]
+    Surreal(#[lerr(from, wrap = Arc)] surrealdb::Error),
 }
