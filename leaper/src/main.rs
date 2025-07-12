@@ -3,66 +3,13 @@ mod cli;
 mod config;
 mod db;
 
-#[cfg(feature = "testbed")]
-mod testbed;
-
-#[cfg(feature = "testbed")]
-pub use testbed::*;
-
 use std::sync::Arc;
 
-#[cfg(not(feature = "testbed"))]
 use iced::Executor;
 
 use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-#[cfg(feature = "testbed")]
-fn main() -> miette::Result<()> {
-    use futures::StreamExt;
-    use itertools::Itertools;
-    use miette::IntoDiagnostic;
-    use tracing::Instrument;
-
-    use crate::testbed::*;
-
-    miette::set_panic_hook();
-
-    let TestbedCli {
-        debug,
-        trace,
-        error,
-    } = TestbedCli::parse();
-
-    init_tracing(debug, trace, error_wait_completion)?;
-
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_stack_size(10 * 1024 * 1024)
-        .build()
-        .into_diagnostic()?;
-
-    runtime.block_on(
-        async move {
-            #[cfg(not(feature = "db-websocket"))]
-            let project_dirs = directories::ProjectDirs::from("com", "tukanoid", "leaper")
-                .ok_or(LeaperError::NoProjectDirs)?;
-
-            let db = crate::db::init_db(
-                #[cfg(not(feature = "db-websocket"))]
-                project_dirs,
-            )
-            .await?;
-
-            // TODO
-
-            Ok(())
-        }
-        .instrument(tracing::debug_span!("Testbed Execution")),
-    )
-}
-
-#[cfg(not(feature = "testbed"))]
 fn main() -> LeaperResult<()> {
     use iced_layershell::{
         build_pattern::MainSettings,

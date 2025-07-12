@@ -11,10 +11,6 @@ homepage.workspace = true
 default = ["surrealdb/kv-surrealkv"]
 db-websocket = ["surrealdb/protocol-ws"]
 
-testbed-local = ["testbed"]
-testbed-ws = ["testbed", "db-websocket"]
-testbed = []
-
 profile = [
   "opentelemetry",
   "opentelemetry_sdk",
@@ -88,3 +84,6 @@ opentelemetry-zipkin = { version = "0.30.0", default-features = false, features 
 dashmap = "6.1.0"
 ez-pixmap = "0.2.2"
 tokio-mpmc = "0.2.4"
+
+[package.metadata.cargo-machete]
+ignored = ["thiserror"]
