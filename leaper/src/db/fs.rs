@@ -42,7 +42,7 @@ macro_rules! check_stop {
 #[bon::builder]
 pub async fn index(
     #[builder(into)] root: PathBuf,
-    db: Arc<DB>,
+    db: DB,
     #[builder(default)] parents: bool,
     pre_filter: impl Fn(&PathBuf) -> Option<bool> + Clone + Send + Sync + 'static,
     mut stop_receiver: Option<tokio_mpmc::Receiver<()>>,
@@ -134,7 +134,7 @@ impl FSNode {
     #[builder]
     async fn add_db(
         #[builder(into)] path: PathBuf,
-        db: Arc<DB>,
+        db: DB,
         parents: bool,
     ) -> FSResult<RecordId> {
         if let Some(id) = FindNodeByPathQuery::builder()
@@ -203,7 +203,7 @@ impl FSNode {
     async fn add_parent(
         path: PathBuf,
         child_fs_node_id: RecordId,
-        db: Arc<DB>,
+        db: DB,
     ) -> FSResult<RecordId> {
         // Should be fine as we only call this function on parent directories of nodes
         let parent_fs_node_id: RecordId = Box::pin(
@@ -272,7 +272,7 @@ pub struct Directory {
 }
 
 impl Directory {
-    async fn add_db(fs_node_id: RecordId, db: Arc<DB>) -> FSResult<()> {
+    async fn add_db(fs_node_id: RecordId, db: DB) -> FSResult<()> {
         CreateDirectoryQuery::builder()
             .fs_node(fs_node_id)
             .build()
@@ -360,7 +360,7 @@ pub struct File {
 }
 
 impl File {
-    async fn add_db(path: PathBuf, fs_node_id: RecordId, db: Arc<DB>) -> FSResult<()> {
+    async fn add_db(path: PathBuf, fs_node_id: RecordId, db: DB) -> FSResult<()> {
         CreateFileQuery::builder()
             .fs_node(fs_node_id.clone())
             .maybe_ext(
@@ -421,7 +421,7 @@ impl Symlink {
     async fn add_db(
         #[builder(into)] path: PathBuf,
         fs_node_id: RecordId,
-        db: Arc<DB>,
+        db: DB,
         parents: bool,
     ) -> FSResult<()> {
         let links_to = match path.read_link() {

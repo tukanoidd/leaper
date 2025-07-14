@@ -41,7 +41,7 @@ pub type AppSubscription<Msg = AppMsg> = iced::Subscription<Msg>;
 pub struct App {
     config: Arc<Config>,
 
-    db: Option<Arc<DB>>,
+    db: Option<DB>,
 
     mode: AppMode,
 }
@@ -297,7 +297,7 @@ pub enum AppMsg {
         app_search_stop_sender: Option<tokio_mpmc::Sender<()>>,
     },
 
-    InitDB(LeaperResult<Arc<DB>>),
+    InitDB(LeaperResult<DB>),
 
     Mode(AppModeMsg),
 

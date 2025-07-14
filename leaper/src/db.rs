@@ -39,7 +39,7 @@ pub type DB = Surreal<Db>;
 
 pub async fn init_db(
     #[cfg(not(feature = "db-websocket"))] project_dirs: ProjectDirs,
-) -> LeaperResult<Arc<DB>> {
+) -> LeaperResult<DB> {
     #[cfg(feature = "db-websocket")]
     let endpoint = "localhost:8000";
 
@@ -72,11 +72,11 @@ pub async fn init_db(
     )
     .await?;
 
-    Ok(Arc::new(db))
+    Ok(db)
 }
 
 pub trait InstrumentedSurrealQuery: SurrealQuery {
-    async fn instrumented_execute(self, db: Arc<DB>) -> Result<Self::Output, Self::Error>;
+    async fn instrumented_execute(self, db: DB) -> Result<Self::Output, Self::Error>;
 }
 
 impl<Q> InstrumentedSurrealQuery for Q
@@ -84,7 +84,7 @@ where
     Q: SurrealQuery,
     Q::Error: std::fmt::Display,
 {
-    async fn instrumented_execute(self, db: Arc<DB>) -> Result<Self::Output, Self::Error> {
+    async fn instrumented_execute(self, db: DB) -> Result<Self::Output, Self::Error> {
         self.execute(db)
             .instrument(debug_span!("Calling query", query = Self::QUERY_STR))
             .await

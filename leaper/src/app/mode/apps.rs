@@ -430,9 +430,9 @@ impl Apps {
 
 #[derive(Debug, Clone)]
 pub enum AppsMsg {
-    InitApps(Arc<DB>),
+    InitApps(DB),
     InitedApps(InitAppsIconsResult),
-    LoadApps(Arc<DB>, AppsFinder),
+    LoadApps(DB, AppsFinder),
     LoadedApps(LoadAppsIconsResult),
 
     AddApp(AppWithIcon),

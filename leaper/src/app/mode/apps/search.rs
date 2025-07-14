@@ -35,7 +35,7 @@ impl AppsFinder {
         (res, stop_sender)
     }
 
-    pub async fn search(self, db: Arc<DB>) -> AppsResult<()> {
+    pub async fn search(self, db: DB) -> AppsResult<()> {
         let Self { stop_receiver } = self;
 
         let mut tasks = JoinSet::new();
