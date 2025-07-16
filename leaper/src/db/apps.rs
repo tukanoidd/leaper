@@ -77,24 +77,40 @@ impl CreateAppEntryQuery {
             .map(|s| s.trim().to_string())
             .unwrap_or_else(|_| "Unknown".into());
 
-        let exec = entry.parse_exec().map_err(AppsError::from).or_else(|_| {
-            entry
-                .parse_exec_with_uris::<&str>(&[], &[])
-                .map_err(AppsError::from)
-                .or_else(|_| {
-                    entry
-                        .exec()
-                        .ok_or_else(|| AppsError::DesktopEntryNoExec(path.into()))
-                        .and_then(|exec_str| {
-                            shlex::split(exec_str).ok_or_else(|| {
-                                AppsError::DesktopEntryParseExec(
-                                    path.to_path_buf(),
-                                    exec_str.into(),
-                                )
+        let exec = entry.exec().map(|exec_str| {
+            match exec_str.split(" ").skip(1).any(|x| x.contains("%")) {
+                true => {
+                      entry.parse_exec().map_err(AppsError::from).or_else(|_| {
+                        entry
+                            .parse_exec_with_uris::<&str>(&[], &[])
+                            .map_err(AppsError::from)
+                            .or_else(|_| {
+                                entry
+                                    .exec()
+                                    .ok_or_else(|| AppsError::DesktopEntryNoExec(path.into()))
+                                    .and_then(|exec_str| {
+                                        shlex::split(exec_str).ok_or_else(|| {
+                                            AppsError::DesktopEntryParseExec(
+                                                path.to_path_buf(),
+                                                exec_str.into(),
+                                            )
+                                        })
+                                    })
                             })
-                        })
-                })
-        })?;
+                    })      
+                }
+                false => {
+                    shlex::split(exec_str).ok_or_else(|| {
+                        AppsError::DesktopEntryParseExec(
+                            path.to_path_buf(),
+                            exec_str.into(),
+                        )
+                    })
+                }
+            }
+        })
+            .transpose()?
+            .ok_or_else(|| AppsError::DesktopEntryNoExec(path.into()))?;
 
         let icon_name = entry.icon().map(|icon_name| icon_name.to_string());
 
