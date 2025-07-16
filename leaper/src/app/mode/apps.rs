@@ -158,12 +158,27 @@ impl Apps {
                             .collect()
                     }
                 };
+
+                self.selected = self.selected.clamp(
+                    0,
+                    self.search
+                        .is_empty()
+                        .then(|| self.apps.len())
+                        .unwrap_or_else(|| self.filtered.len())
+                        - 1,
+                );
             }
             AppsMsg::SelectUp => {
-                self.selected = match self.apps.is_empty() {
+                let len = self
+                    .search
+                    .is_empty()
+                    .then(|| self.apps.len())
+                    .unwrap_or_else(|| self.filtered.len());
+
+                self.selected = match len == 0 {
                     true => 0,
                     false => match self.selected {
-                        0 => self.apps.len() - 1,
+                        0 => len - 1,
                         x => x - 1,
                     },
                 };
@@ -171,9 +186,15 @@ impl Apps {
                 return AppTask::done(AppsMsg::ScrollToSelected).map(Into::into);
             }
             AppsMsg::SelectDown => {
-                self.selected = match self.apps.is_empty() {
+                let len = self
+                    .search
+                    .is_empty()
+                    .then(|| self.apps.len())
+                    .unwrap_or_else(|| self.filtered.len());
+
+                self.selected = match len == 0 {
                     true => 0,
-                    false => match self.selected >= self.apps.len() - 1 {
+                    false => match self.selected >= len - 1 {
                         true => 0,
                         false => self.selected + 1,
                     },
