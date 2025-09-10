@@ -1,5 +1,6 @@
 [workspace]
 resolver = "3"
+members = ["leaper", "leaper-macros"]
 
 [workspace.dependencies]
 surrealdb = { version = "2.3.6", default-features = false }
