@@ -46,13 +46,14 @@ pub async fn init_db(
     #[cfg(not(feature = "db-websocket"))]
     let endpoint = project_dirs.data_local_dir().join("db");
 
-    let db = DB::connect::<Schema>((
+    let db = Surreal::new((
         endpoint,
         Config::default()
             .capabilities(Capabilities::all().with_all_experimental_features_allowed())
             .strict(),
-    ));
-    db.use_ns_db(
+    ))
+    .await?;
+    db.use_ns_db_checked(
         "leaper",
         "data",
         vec![
