@@ -26,14 +26,8 @@ use crate::{
 #[cfg(not(feature = "db-websocket"))]
 pub type Db = surrealdb::engine::local::Db;
 
-#[cfg(not(feature = "db-websocket"))]
-pub type Schema = surrealdb::engine::local::SurrealKv;
-
 #[cfg(feature = "db-websocket")]
 pub type Db = surrealdb::engine::remote::ws::Client;
-
-#[cfg(feature = "db-websocket")]
-pub type Schema = surrealdb::engine::remote::ws::Ws;
 
 pub type DB = Surreal<Db>;
 
@@ -46,7 +40,7 @@ pub async fn init_db(
     #[cfg(not(feature = "db-websocket"))]
     let endpoint = project_dirs.data_local_dir().join("db");
 
-    let db = Surreal::new((
+    let db = DB::new((
         endpoint,
         Config::default()
             .capabilities(Capabilities::all().with_all_experimental_features_allowed())
