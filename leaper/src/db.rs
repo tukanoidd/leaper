@@ -12,7 +12,7 @@ use surrealdb::{
     Surreal,
     opt::{Config, capabilities::Capabilities},
 };
-use surrealdb_extras::{SurrealQuery, SurrealTableInfo, use_ns_db};
+use surrealdb_extras::{SurrealExt, SurrealQuery, SurrealTableInfo};
 use tracing::{Instrument, debug_span};
 
 use crate::{
@@ -46,14 +46,13 @@ pub async fn init_db(
     #[cfg(not(feature = "db-websocket"))]
     let endpoint = project_dirs.data_local_dir().join("db");
 
-    let connection = DB::new::<Schema>((
+    let db = DB::connect::<Schema>((
         endpoint,
         Config::default()
             .capabilities(Capabilities::all().with_all_experimental_features_allowed())
             .strict(),
     ));
-    let db = use_ns_db(
-        connection,
+    db.use_ns_db(
         "leaper",
         "data",
         vec![
