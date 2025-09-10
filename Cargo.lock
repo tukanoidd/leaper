@@ -6861,7 +6861,7 @@ dependencies = [
 [[package]]
 name = "surrealdb-extras"
 version = "3.0.0-alpha1"
-source = "git+https://github.com/tukanoidd/surrealdb-extras.git#0857e0fa4888303c91fb1a91b9067626c533d092"
+source = "git+https://github.com/tukanoidd/surrealdb-extras.git?rev=83d604846df83d6772562bbe7eadf97a37d02cbc#83d604846df83d6772562bbe7eadf97a37d02cbc"
 dependencies = [
  "serde",
  "serde-content",
@@ -6872,7 +6872,7 @@ dependencies = [
 [[package]]
 name = "surrealdb-extras-proc-macro"
 version = "3.0.0-alpha1"
-source = "git+https://github.com/tukanoidd/surrealdb-extras.git#0857e0fa4888303c91fb1a91b9067626c533d092"
+source = "git+https://github.com/tukanoidd/surrealdb-extras.git?rev=83d604846df83d6772562bbe7eadf97a37d02cbc#83d604846df83d6772562bbe7eadf97a37d02cbc"
 dependencies = [
  "darling 0.20.11",
  "heck",

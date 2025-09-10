@@ -6,7 +6,7 @@ members = ["leaper", "leaper-macros"]
 surrealdb = { version = "2.3.6", default-features = false }
 surrealdb-core = "2.3.6"
 
-surrealdb-extras = { git = "https://github.com/tukanoidd/surrealdb-extras.git" }
+surrealdb-extras = { git = "https://github.com/tukanoidd/surrealdb-extras.git", rev = "83d604846df83d6772562bbe7eadf97a37d02cbc" }
 
 serde = "1.0"
 heck = "0.5.0"
