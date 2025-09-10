@@ -42,7 +42,7 @@ impl DeriveInputUtil for LError {
             .map(|ty| quote! { #vis type #ty<T> = Result<T, #ident>; });
 
         Ok(quote! {
-            #[derive(Debug, Clone, thiserror::Error, miette::Diagnostic)]
+            #[derive(Debug, Clone, thiserror::Error)]
             #vis enum #ident {
                 #(#enum_vars),*
             }

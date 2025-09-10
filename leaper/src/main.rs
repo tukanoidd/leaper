@@ -11,7 +11,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::executor::LeaperExecutor;
 
-fn main() -> LeaperResult<()> {
+fn main() -> color_eyre::Result<()> {
     use iced_layershell::{
         build_pattern::MainSettings,
         reexport::{Anchor, KeyboardInteractivity, Layer},
@@ -20,7 +20,7 @@ fn main() -> LeaperResult<()> {
 
     use crate::{app::App, cli::Cli, config::Config};
 
-    miette::set_panic_hook();
+    color_eyre::install()?;
 
     let Cli {
         mode,

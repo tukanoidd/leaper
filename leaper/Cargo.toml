@@ -24,8 +24,14 @@ profile = [
 macros = { path = "../leaper-macros", package = "leaper-macros" }
 
 surrealdb = { workspace = true, features = ["allocator"] }
+surrealdb-extras.workspace = true
+# surrealdb-extras = { path = "../../surrealdb-extras" }
+
+serde.workspace = true
 
 heck.workspace = true
+
+color-eyre.workspace = true
 
 iced = { version = "0.13", features = ["tokio", "image", "svg", "advanced"] }
 iced_layershell = "0.13.7"
@@ -35,9 +41,6 @@ iced_aw = { version = "0.12.2", default-features = false, features = [
 iced_fonts = { version = "0.2.1", features = ["nerd"] }
 
 clap = { version = "4.5.40", features = ["derive"] }
-
-surrealdb-extras = { git = "https://github.com/tukanoidd/surrealdb-extras.git" }
-# surrealdb-extras = { path = "../../surrealdb-extras" }
 
 tokio = "1.46"
 tokio-stream = "0.1.17"
@@ -60,7 +63,6 @@ derive_more = { version = "2.0.1", features = ["from", "debug"] }
 pastey = "0.1"
 itertools = "0.14"
 
-serde = "1.0"
 toml = "0.9.2"
 
 tracing = "0.1"
@@ -70,7 +72,6 @@ tracing-subscriber = { version = "0.3.19", features = [
 ], default-features = false }
 
 thiserror = "2.0"
-miette = { version = "7.6", features = ["fancy"] }
 
 # Profiling
 tracing-opentelemetry = { version = "0.31.0", optional = true }

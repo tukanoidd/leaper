@@ -1,12 +1,16 @@
 [workspace]
-members = ["leaper", "leaper-macros"]
 resolver = "3"
 
 [workspace.dependencies]
 surrealdb = { version = "2.3.6", default-features = false }
 surrealdb-core = "2.3.6"
 
+surrealdb-extras = { git = "https://github.com/tukanoidd/surrealdb-extras.git" }
+
+serde = "1.0"
 heck = "0.5.0"
+
+color-eyre = "0.6.5"
 
 [workspace.package]
 version = "0.1.0"
