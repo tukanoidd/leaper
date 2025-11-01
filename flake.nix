@@ -1,91 +1,116 @@
 {
+  description = "Leaper";
+
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    nci = {
-      url = "github:yusdacra/nix-cargo-integration";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    crane.url = "github:ipetkov/crane";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    parts = {
-      url = "github:hercules-ci/flake-parts";
-      inputs.nixpkgs-lib.follows = "nixpkgs";
-    };
-    home-manager.url = "github:nix-community/home-manager";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = inputs @ {
+  outputs = {
     self,
-    parts,
-    nci,
+    nixpkgs,
+    crane,
+    rust-overlay,
+    flake-utils,
     ...
   }:
-    parts.lib.mkFlake {inherit inputs;} {
-      systems = ["x86_64-linux" "aarch64-linux"];
-      imports = [
-        inputs.home-manager.flakeModules.home-manager
-        nci.flakeModule
-        ./crates.nix
-      ];
-      perSystem = {
-        config,
-        pkgs,
-        ...
-      }: let
-        outputs = config.nci.outputs;
-      in {
-        devShells.default = outputs."leaper".devShell.overrideAttrs (old: {
-          packages =
-            (old.packages or [])
-            ++ (with pkgs; [
-              cargo-edit
-              cargo-expand
-              cargo-machete
-              cargo-audit
-              cargo-bloat
-              cargo-features-manager
-              cargo-modules
-
-              surrealdb
-            ]);
-        });
-
-        packages = {
-          default = outputs."leaper".packages.release;
-          leaper = config.packages.default;
+    (flake-utils.lib.eachDefaultSystem (
+      system: let
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [(import rust-overlay)];
         };
-      };
 
-      flake = {
-        homeModules = {
-          default = {
-            config,
-            pkgs,
-            lib,
-            ...
-          }: let
-            leaper-program = config.programs.leaper;
-          in
-            with lib; {
-              options = {
-                programs.leaper = {
-                  enable = mkEnableOption "leaper";
-                  package = mkOption {
-                    description = "Package for Leaper";
-                    example = false;
-                    type = types.package;
-                  };
-                };
-              };
-              config = {
-                home = {
-                  packages = (
-                    if leaper-program.enable
-                    then [leaper-program.package]
-                    else []
-                  );
+        craneLib = (crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml);
+
+        commonArgs = {
+          src = craneLib.cleanCargoSource ./.;
+          strictDeps = true;
+
+          buildInputs = with pkgs;
+          with xorg; [
+            vulkan-loader
+            libGL
+
+            wayland
+            libX11
+
+            libxkbcommon
+          ];
+        };
+
+        leaper = craneLib.buildPackage (
+          commonArgs
+          // {
+            cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+          }
+        );
+      in {
+        checks = {
+          inherit leaper;
+        };
+
+        packages.default = leaper;
+
+        apps.default = flake-utils.lib.mkApp {
+          drv = leaper;
+        };
+
+        devShells.default = craneLib.devShell {
+          checks = self.checks.${system};
+
+          inputsFrom = [leaper];
+
+          packages = with pkgs; [
+            cargo-edit
+            cargo-expand
+            cargo-machete
+            cargo-audit
+            cargo-bloat
+            cargo-features-manager
+            cargo-modules
+
+            surrealdb
+          ];
+        };
+      }
+    ))
+    // {
+      homeModules = {
+        default = {
+          config,
+          pkgs,
+          lib,
+          ...
+        }: let
+          leaper-program = config.programs.leaper;
+        in
+          with lib; {
+            options = {
+              programs.leaper = {
+                enable = mkEnableOption "leaper";
+                package = mkOption {
+                  description = "Package for Leaper";
+                  example = false;
+                  type = types.package;
                 };
               };
             };
-        };
+            config = {
+              home = {
+                packages = (
+                  if leaper-program.enable
+                  then [leaper-program.package]
+                  else []
+                );
+              };
+            };
+          };
       };
     };
 }

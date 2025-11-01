@@ -1,5 +1,19 @@
 # Can be used, but not recommended
 
+## Cachix Binary
+```nix
+nix.settings = {
+  substituters = [
+    "https://leaper.cachix.org"
+    # Others...
+  ];
+  trusted-public-keys = [
+    "leaper.cachix.org-1:ZpRX/x4HMz6yqURw0OGxl4L/bjoRJ4iTvcbqSp4T+ks="
+    # Others...
+  ];
+};
+```
+
 ## Anyway, what is it?
 1. App Launcher (default mode) (custom solution, good enough for me (but planning to improve things as i go))
 2. Command Runner (parse with [shlex](https://docs.rs/shlex/), run with [std::process:Command](https://doc.rust-lang.org/std/process/struct.Command.html))

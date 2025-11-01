@@ -2,6 +2,9 @@
 resolver = "3"
 members = ["leaper", "leaper-macros"]
 
+[workspace.metadata.crane]
+name = "leaper"
+
 [workspace.dependencies]
 surrealdb = { version = "2.3.6", default-features = false }
 surrealdb-core = "2.3.6"
