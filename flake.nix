@@ -52,6 +52,10 @@
           commonArgs
           // {
             cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+            postFixup = ''
+              patchelf $out/bin/leaper --add-rpath ${libsPath}
+            '';
           }
         );
       in {
