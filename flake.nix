@@ -59,7 +59,10 @@
           inherit leaper;
         };
 
-        packages.default = leaper;
+        packages = {
+          inherit leaper;
+          default = leaper;
+        };
 
         apps.default = flake-utils.lib.mkApp {
           drv = leaper;
