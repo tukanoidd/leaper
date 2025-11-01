@@ -28,20 +28,24 @@
 
         craneLib = (crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml);
 
+        libs = with pkgs;
+        with xorg; [
+          vulkan-loader
+          libGL
+
+          wayland
+          xorg.libX11
+
+          libxkbcommon
+        ];
+        libsPath = pkgs.lib.makeLibraryPath libs;
+
         commonArgs = {
           src = craneLib.cleanCargoSource ./.;
           strictDeps = true;
 
-          buildInputs = with pkgs;
-          with xorg; [
-            vulkan-loader
-            libGL
-
-            wayland
-            libX11
-
-            libxkbcommon
-          ];
+          buildInputs = libs;
+          passthru.runtimeLibsPath = libsPath;
         };
 
         leaper = craneLib.buildPackage (
@@ -77,6 +81,10 @@
 
             surrealdb
           ];
+
+          shellHook = ''
+            export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${libsPath}";
+          '';
         };
       }
     ))
