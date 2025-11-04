@@ -154,7 +154,7 @@ impl LeaperMode for LeaperRunner {
     }
 
     fn title(&self) -> String {
-        "Leaper Runner".into()
+        "leaper-runner".into()
     }
 
     fn theme(&self) -> mode::LeaperModeTheme {

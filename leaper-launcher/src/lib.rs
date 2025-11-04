@@ -537,7 +537,7 @@ impl LeaperMode for LeaperLauncher {
     }
 
     fn title(&self) -> String {
-        "Leaper Launcher".into()
+        "leaper-launcher".into()
     }
 
     fn theme(&self) -> LeaperModeTheme {

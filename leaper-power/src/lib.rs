@@ -238,7 +238,7 @@ impl LeaperMode for LeaperPower {
     }
 
     fn title(&self) -> String {
-        "Leaper Power Menu".into()
+        "leaper-power".into()
     }
 
     fn theme(&self) -> LeaperModeTheme {

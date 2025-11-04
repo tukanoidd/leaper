@@ -17,6 +17,7 @@ pub fn scrollable(
     status: widget::scrollable::Status,
 ) -> widget::scrollable::Style {
     let mut style = widget::scrollable::default(theme, status);
+
     style.container = widget::container::rounded_box(theme).background(Color::TRANSPARENT);
     style.vertical_rail.border = style.vertical_rail.border.rounded(10.0);
     style.vertical_rail.scroller.border = style.vertical_rail.scroller.border.rounded(10.0);
