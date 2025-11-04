@@ -552,8 +552,10 @@ impl LeaperLauncher {
         center(
             text_input("Search for an app...", &self.search)
                 .id(text_input::Id::new(Self::SEARCH_ID))
-                .on_input_maybe((!self.apps.is_empty()).then_some(LeaperLauncherMsg::SearchInput))
-                .on_submit(LeaperLauncherMsg::RunSelectedApp)
+                .on_input_maybe(
+                    (!self.apps.is_empty()).then_some(<Self as LeaperMode>::Msg::SearchInput),
+                )
+                .on_submit(<Self as LeaperMode>::Msg::RunSelectedApp)
                 .size(25)
                 .padding(10)
                 .style(Self::text_input_style),
@@ -724,7 +726,7 @@ impl LeaperLauncher {
         .align_y(Vertical::Center);
 
         button(r)
-            .on_press(LeaperLauncherMsg::RunApp(ind))
+            .on_press(<Self as LeaperMode>::Msg::RunApp(ind))
             .style(move |theme, status| {
                 let status = match selected == ind {
                     true => button::Status::Hovered,

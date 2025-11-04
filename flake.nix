@@ -90,13 +90,21 @@
           inputsFrom = [leaper];
 
           packages = with pkgs; [
+            # Workspace Management
             cargo-edit
-            cargo-expand
-            cargo-machete
-            cargo-audit
-            cargo-bloat
             cargo-features-manager
+
+            # Audit
+            cargo-audit
+
+            # Misc
             cargo-modules
+            cargo-expand
+
+            # Clean up unused stuff
+            cargo-machete
+            cargo-udeps
+            cargo-bloat
 
             surrealdb
 

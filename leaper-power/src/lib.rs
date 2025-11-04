@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use directories::ProjectDirs;
 use iced::{
+    Event,
     alignment::Horizontal,
+    keyboard::{self, Key, key},
     widget::{button, center, column, row, text},
 };
 use iced_fonts::{NERD_FONT, Nerd, nerd::icon_to_string};
@@ -113,79 +115,98 @@ impl LeaperMode for LeaperPower {
             config,
             connection: None,
         };
-        let task = Self::Task::done(LeaperPowerMsg::ConnectZbus);
+        let task = Self::Task::done(Self::Msg::ConnectZbus);
 
         (power, task)
     }
 
-    fn update(&mut self, msg: LeaperPowerMsg) -> Self::Task {
+    fn update(&mut self, msg: Self::Msg) -> Self::Task {
         match msg {
-            LeaperPowerMsg::Exit => iced::exit(),
-            LeaperPowerMsg::ConnectZbus => {
-                Self::Task::perform(LeaperPower::zbus_connect(), |res| {
-                    LeaperPowerMsg::ZbusConnected(res)
-                })
+            Self::Msg::Exit => return iced::exit(),
+
+            Self::Msg::ConnectZbus => {
+                return Self::Task::perform(LeaperPower::zbus_connect(), |res| {
+                    Self::Msg::ZbusConnected(res)
+                });
             }
-            LeaperPowerMsg::ZbusConnected(connection) => match connection {
-                Ok(connection) => {
-                    self.connection = Some(connection);
-                    Self::Task::none()
-                }
+            Self::Msg::ZbusConnected(connection) => match connection {
+                Ok(connection) => self.connection = Some(connection),
                 Err(e) => {
                     tracing::error!("{}", e);
-                    Self::Task::done(LeaperPowerMsg::Exit)
+                    return Self::Task::done(Self::Msg::Exit);
                 }
             },
-            LeaperPowerMsg::Lock => Self::action_task(
-                "Lock",
-                self.config.power.actions.lock.clone(),
-                self.connection.clone(),
-                Self::lock,
-            ),
-            LeaperPowerMsg::LogOut => Self::action_task(
-                "Log Out",
-                self.config.power.actions.log_out.clone(),
-                self.connection.clone(),
-                Self::terminate,
-            ),
-            LeaperPowerMsg::Hibernate => Self::action_task(
-                "Hibernate",
-                self.config.power.actions.hibernate.clone(),
-                self.connection.clone(),
-                Self::hibernate,
-            ),
-            LeaperPowerMsg::Reboot => Self::action_task(
-                "Reboot",
-                self.config.power.actions.reboot.clone(),
-                self.connection.clone(),
-                Self::reboot,
-            ),
-            LeaperPowerMsg::Shutdown => Self::action_task(
-                "Shutdown",
-                self.config.power.actions.shutdown.clone(),
-                self.connection.clone(),
-                Self::power_off,
-            ),
-            LeaperPowerMsg::ActionResult(result) => {
+            Self::Msg::Lock => {
+                return Self::action_task(
+                    "Lock",
+                    self.config.power.actions.lock.clone(),
+                    self.connection.clone(),
+                    Self::lock,
+                );
+            }
+            Self::Msg::LogOut => {
+                return Self::action_task(
+                    "Log Out",
+                    self.config.power.actions.log_out.clone(),
+                    self.connection.clone(),
+                    Self::terminate,
+                );
+            }
+            Self::Msg::Hibernate => {
+                return Self::action_task(
+                    "Hibernate",
+                    self.config.power.actions.hibernate.clone(),
+                    self.connection.clone(),
+                    Self::hibernate,
+                );
+            }
+            Self::Msg::Reboot => {
+                return Self::action_task(
+                    "Reboot",
+                    self.config.power.actions.reboot.clone(),
+                    self.connection.clone(),
+                    Self::reboot,
+                );
+            }
+            Self::Msg::Shutdown => {
+                return Self::action_task(
+                    "Shutdown",
+                    self.config.power.actions.shutdown.clone(),
+                    self.connection.clone(),
+                    Self::power_off,
+                );
+            }
+            Self::Msg::ActionResult(result) => {
                 if let Err(err) = result {
                     tracing::error!("Failed to perform logind action: {err}");
                 }
 
-                Self::Task::done(LeaperPowerMsg::Exit)
+                return Self::Task::done(Self::Msg::Exit);
             }
 
-            LeaperPowerMsg::AnchorChange(_)
-            | LeaperPowerMsg::SetInputRegion(_)
-            | LeaperPowerMsg::AnchorSizeChange(_, _)
-            | LeaperPowerMsg::LayerChange(_)
-            | LeaperPowerMsg::MarginChange(_)
-            | LeaperPowerMsg::SizeChange(_)
-            | LeaperPowerMsg::VirtualKeyboardPressed { .. } => Self::Task::none(),
+            Self::Msg::IcedEvent(event) => {
+                if let Event::Keyboard(event) = event
+                    && let keyboard::Event::KeyPressed { key, .. } = event
+                    && let Key::Named(key::Named::Escape) | Key::Character("q" | "Q") = key.as_ref()
+                {
+                    return Self::Task::done(Self::Msg::Exit);
+                }
+            }
+
+            Self::Msg::AnchorChange(_)
+            | Self::Msg::SetInputRegion(_)
+            | Self::Msg::AnchorSizeChange(_, _)
+            | Self::Msg::LayerChange(_)
+            | Self::Msg::MarginChange(_)
+            | Self::Msg::SizeChange(_)
+            | Self::Msg::VirtualKeyboardPressed { .. } => {}
         }
+
+        Self::Task::none()
     }
 
     fn view(&self) -> Self::Element<'_> {
-        let power_btn = |icon: Nerd, str: &'static str, msg: LeaperPowerMsg| {
+        let power_btn = |icon: Nerd, str: &'static str, msg: Self::Msg| {
             button(center(
                 column![
                     text(icon_to_string(icon)).font(NERD_FONT).size(80),
@@ -201,11 +222,11 @@ impl LeaperMode for LeaperPower {
 
         center(
             row![
-                power_btn(Nerd::AccountLock, "Lock", LeaperPowerMsg::Lock),
-                power_btn(Nerd::Logout, "Log Out", LeaperPowerMsg::LogOut),
-                power_btn(Nerd::Snowflake, "Hibernate", LeaperPowerMsg::Hibernate),
-                power_btn(Nerd::RotateLeft, "Reboot", LeaperPowerMsg::Reboot),
-                power_btn(Nerd::Power, "Shutdown", LeaperPowerMsg::Shutdown)
+                power_btn(Nerd::AccountLock, "Lock", Self::Msg::Lock),
+                power_btn(Nerd::Logout, "Log Out", Self::Msg::LogOut),
+                power_btn(Nerd::Snowflake, "Hibernate", Self::Msg::Hibernate),
+                power_btn(Nerd::RotateLeft, "Reboot", Self::Msg::Reboot),
+                power_btn(Nerd::Power, "Shutdown", Self::Msg::Shutdown)
             ]
             .spacing(20),
         )
@@ -213,7 +234,7 @@ impl LeaperMode for LeaperPower {
     }
 
     fn subscription(&self) -> Self::Subscription {
-        Self::Subscription::none()
+        iced::event::listen().map(Self::Msg::IcedEvent)
     }
 
     fn title(&self) -> String {
@@ -261,11 +282,11 @@ impl LeaperPower {
     {
         match method {
             ActionMethod::Dbus => <Self as LeaperMode>::Task::perform(dbus_fn(connection), |res| {
-                LeaperPowerMsg::ActionResult(res)
+                <Self as LeaperMode>::Msg::ActionResult(res)
             }),
             ActionMethod::Cmd(args) => {
                 <Self as LeaperMode>::Task::perform(Self::cmd(action, args), |res| {
-                    LeaperPowerMsg::ActionResult(res)
+                    <Self as LeaperMode>::Msg::ActionResult(res)
                 })
             }
         }
@@ -307,6 +328,8 @@ pub enum LeaperPowerMsg {
     Shutdown,
 
     ActionResult(LeaperPowerResult<()>),
+
+    IcedEvent(Event),
 }
 
 #[lerror]

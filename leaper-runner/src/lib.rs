@@ -1,7 +1,11 @@
 use std::sync::Arc;
 
 use directories::ProjectDirs;
-use iced::widget::{center, text_input};
+use iced::{
+    Event,
+    keyboard::{self, Key, key},
+    widget::{center, text_input},
+};
 use iced_layershell::{
     build_pattern::MainSettings,
     reexport::{Anchor, KeyboardInteractivity, Layer},
@@ -88,19 +92,19 @@ impl LeaperMode for LeaperRunner {
                 .size(30)
                 .padding(10)
                 .style(Self::text_input_style)
-                .on_input(LeaperRunnerMsg::Input)
-                .on_submit(LeaperRunnerMsg::TryRun),
+                .on_input(Self::Msg::Input)
+                .on_submit(Self::Msg::TryRun),
         )
         .padding(10)
         .into()
     }
 
-    fn update(&mut self, msg: LeaperRunnerMsg) -> Self::Task {
+    fn update(&mut self, msg: Self::Msg) -> Self::Task {
         match msg {
-            LeaperRunnerMsg::Exit => return iced::exit(),
+            Self::Msg::Exit => return iced::exit(),
 
-            LeaperRunnerMsg::Input(new_input) => self.input = new_input,
-            LeaperRunnerMsg::TryRun => {
+            Self::Msg::Input(new_input) => self.input = new_input,
+            Self::Msg::TryRun => {
                 let split = shlex::split(&self.input);
 
                 match split {
@@ -124,20 +128,29 @@ impl LeaperMode for LeaperRunner {
                 }
             }
 
-            LeaperRunnerMsg::AnchorChange(_)
-            | LeaperRunnerMsg::SetInputRegion(_)
-            | LeaperRunnerMsg::SizeChange(_)
-            | LeaperRunnerMsg::AnchorSizeChange(_, _)
-            | LeaperRunnerMsg::LayerChange(_)
-            | LeaperRunnerMsg::MarginChange(_)
-            | LeaperRunnerMsg::VirtualKeyboardPressed { .. } => {}
+            Self::Msg::IcedEvent(event) => {
+                if let Event::Keyboard(event) = event
+                    && let keyboard::Event::KeyPressed { key, .. } = event
+                    && let Key::Named(key::Named::Escape) | Key::Character("q" | "Q") = key.as_ref()
+                {
+                    return Self::Task::done(Self::Msg::Exit);
+                }
+            }
+
+            Self::Msg::AnchorChange(_)
+            | Self::Msg::SetInputRegion(_)
+            | Self::Msg::SizeChange(_)
+            | Self::Msg::AnchorSizeChange(_, _)
+            | Self::Msg::LayerChange(_)
+            | Self::Msg::MarginChange(_)
+            | Self::Msg::VirtualKeyboardPressed { .. } => {}
         }
 
         Self::Task::none()
     }
 
     fn subscription(&self) -> Self::Subscription {
-        Self::Subscription::none()
+        iced::event::listen().map(Self::Msg::IcedEvent)
     }
 
     fn title(&self) -> String {
@@ -167,6 +180,8 @@ pub enum LeaperRunnerMsg {
 
     Input(String),
     TryRun,
+
+    IcedEvent(Event),
 }
 
 #[lerror]
