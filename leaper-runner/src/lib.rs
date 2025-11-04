@@ -15,7 +15,7 @@ use iced_layershell::{
 
 use macros::lerror;
 use mode::{
-    LeaperMode, LeaperModeTheme,
+    LeaperMode,
     config::{LeaperAppModeConfigError, LeaperModeConfig},
 };
 
@@ -91,7 +91,7 @@ impl LeaperMode for LeaperRunner {
                 .id(Self::INPUT_ID)
                 .size(30)
                 .padding(10)
-                .style(Self::text_input_style)
+                .style(style::text_input)
                 .on_input(Self::Msg::Input)
                 .on_submit(Self::Msg::TryRun),
         )
@@ -164,13 +164,6 @@ impl LeaperMode for LeaperRunner {
 
 impl LeaperRunner {
     pub const INPUT_ID: &'static str = "command_input";
-
-    fn text_input_style(theme: &LeaperModeTheme, status: text_input::Status) -> text_input::Style {
-        let mut style = iced::widget::text_input::default(theme, status);
-        style.border = style.border.rounded(10);
-
-        style
-    }
 }
 
 #[to_layer_message]

@@ -558,19 +558,12 @@ impl LeaperLauncher {
                 .on_submit(<Self as LeaperMode>::Msg::RunSelectedApp)
                 .size(25)
                 .padding(10)
-                .style(Self::text_input_style),
+                .style(style::text_input),
         )
         .width(Length::Fill)
         .height(Length::Shrink)
         .padding(10)
         .into()
-    }
-
-    fn text_input_style(theme: &LeaperModeTheme, status: text_input::Status) -> text_input::Style {
-        let mut style = iced::widget::text_input::default(theme, status);
-        style.border = style.border.rounded(10);
-
-        style
     }
 
     fn list(&self) -> <Self as LeaperMode>::Element<'_> {
@@ -590,7 +583,7 @@ impl LeaperLauncher {
             .width(Length::Fill)
             .height(Length::Fill)
             .spacing(5)
-            .style(Self::scrollable_style)
+            .style(style::scrollable)
             .into()
         };
 
@@ -612,13 +605,6 @@ impl LeaperLauncher {
                 false => scrllbl(),
             },
         }
-    }
-
-    fn scrollable_style(theme: &LeaperModeTheme, status: scrollable::Status) -> scrollable::Style {
-        let mut style = iced::widget::scrollable::default(theme, status);
-        style.container = iced::widget::container::rounded_box(theme);
-
-        style
     }
 
     const APP_ENTRY_HEIGHT: f32 = 50.0;
@@ -727,14 +713,7 @@ impl LeaperLauncher {
 
         button(r)
             .on_press(<Self as LeaperMode>::Msg::RunApp(ind))
-            .style(move |theme, status| {
-                let status = match selected == ind {
-                    true => button::Status::Hovered,
-                    false => status,
-                };
-
-                button::secondary(theme, status)
-            })
+            .style(move |theme, status| style::list_button(theme, status, selected == ind))
             .height(Length::Fixed(Self::APP_ENTRY_HEIGHT))
             .width(Length::Fill)
             .into()

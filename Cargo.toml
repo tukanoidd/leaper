@@ -8,7 +8,7 @@ members = [
   "leaper-macros",
   "leaper-mode",
   "leaper-power",
-  "leaper-runner",
+  "leaper-runner", "leaper-style",
 ]
 
 [workspace.metadata.crane]

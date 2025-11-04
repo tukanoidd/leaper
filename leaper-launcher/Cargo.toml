@@ -17,6 +17,7 @@ db-websocket = ["db/websocket"]
 [dependencies]
 macros = { path = "../leaper-macros", package = "leaper-macros" }
 mode = { path = "../leaper-mode", package = "leaper-mode" }
+style = { path = "../leaper-style", package = "leaper-style" }
 executor = { path = "../leaper-executor", package = "leaper-executor" }
 db = { path = "../leaper-db", package = "leaper-db" }
 

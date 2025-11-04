@@ -3774,6 +3774,7 @@ dependencies = [
  "leaper-executor",
  "leaper-macros",
  "leaper-mode",
+ "leaper-style",
  "nucleo",
  "thiserror 2.0.17",
  "tokio",
@@ -3833,9 +3834,18 @@ dependencies = [
  "iced_layershell",
  "leaper-macros",
  "leaper-mode",
+ "leaper-style",
  "shlex",
  "thiserror 2.0.17",
  "tracing",
+]
+
+[[package]]
+name = "leaper-style"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "leaper-mode",
 ]
 
 [[package]]
