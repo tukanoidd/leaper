@@ -1,4 +1,5 @@
-use iced::widget;
+use iced::{Color, widget};
+
 use mode::LeaperModeTheme;
 
 pub fn text_input(
@@ -16,7 +17,11 @@ pub fn scrollable(
     status: widget::scrollable::Status,
 ) -> widget::scrollable::Style {
     let mut style = widget::scrollable::default(theme, status);
-    style.container = widget::container::rounded_box(theme);
+    style.container = widget::container::rounded_box(theme).background(Color::TRANSPARENT);
+    style.vertical_rail.border = style.vertical_rail.border.rounded(10.0);
+    style.vertical_rail.scroller.border = style.vertical_rail.scroller.border.rounded(10.0);
+    style.horizontal_rail.border = style.horizontal_rail.border.rounded(10.0);
+    style.horizontal_rail.scroller.border = style.horizontal_rail.scroller.border.rounded(10.0);
 
     style
 }
@@ -31,5 +36,15 @@ pub fn list_button(
         false => status,
     };
 
-    widget::button::secondary(theme, status)
+    let palette = theme.extended_palette();
+
+    let mut style = widget::button::secondary(theme, status);
+
+    style.background = style.background.map(|b| b.scale_alpha(0.75));
+    style.border = style
+        .border
+        .color(palette.background.strong.color)
+        .rounded(10.0);
+
+    style
 }

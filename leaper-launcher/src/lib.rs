@@ -380,7 +380,8 @@ impl LeaperMode for LeaperLauncher {
 
             Self::Msg::ScrollToSelected => {
                 if !self.apps.is_empty() {
-                    let y_offset = self.selected as f32 * Self::APP_ENTRY_HEIGHT;
+                    let y_offset =
+                        self.selected as f32 * (Self::APP_ENTRY_HEIGHT + Self::LIST_SPACING);
 
                     return operate(scroll_to(
                         Id::new(Self::LIST_ID),
@@ -566,6 +567,8 @@ impl LeaperLauncher {
         .into()
     }
 
+    const LIST_SPACING: f32 = 5.0;
+
     fn list(&self) -> <Self as LeaperMode>::Element<'_> {
         let (items, filtered) = match self.search.is_empty() {
             true => (&self.apps, false),
@@ -577,6 +580,7 @@ impl LeaperLauncher {
                 column(items.iter().enumerate().map(|(ind, app)| {
                     Self::app_entry(app, ind, self.selected, self.xpm_handles.clone())
                 }))
+                .spacing(Self::LIST_SPACING)
                 .align_x(Horizontal::Center),
             )
             .id(scrollable::Id::new(Self::LIST_ID))
@@ -607,7 +611,7 @@ impl LeaperLauncher {
         }
     }
 
-    const APP_ENTRY_HEIGHT: f32 = 50.0;
+    const APP_ENTRY_HEIGHT: f32 = 60.0;
     const APP_ENTRY_PADDING: [f32; 2] = [10.0, 5.0];
     const APP_ENTRY_SPACING: f32 = 10.0;
     const APP_ENTRY_IMAGE_SIZE: f32 = Self::APP_ENTRY_HEIGHT - Self::APP_ENTRY_PADDING[1] * 2.0;
@@ -620,7 +624,7 @@ impl LeaperLauncher {
         xpm_handles: Arc<Mutex<DashMap<PathBuf, image::Handle>>>,
     ) -> <Self as LeaperMode>::Element<'a> {
         let r = match &app.icon {
-            Some( icon) => match icon.svg {
+            Some(icon) => match icon.svg {
                 true => row![
                     svg(&icon.path)
                         .width(Self::APP_ENTRY_IMAGE_SIZE)
