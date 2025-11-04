@@ -10,7 +10,6 @@ use macros::lerror;
 use surrealdb::{Notification, value};
 use surrealdb_extras::SurrealQuery;
 use tokio::task::JoinSet;
-use tracing::Instrument;
 
 use crate::{
     check_stop,
@@ -27,6 +26,7 @@ pub struct AppsFinder {
     stop_receiver: tokio_mpmc::Receiver<()>,
 }
 
+#[bon::bon]
 impl AppsFinder {
     pub fn new() -> (Self, tokio_mpmc::Sender<()>) {
         let (stop_sender, stop_receiver) = tokio_mpmc::channel(10);
@@ -35,6 +35,7 @@ impl AppsFinder {
         (res, stop_sender)
     }
 
+    #[tracing::instrument(skip_all, level = "debug", name = "AppsFinder::search")]
     pub async fn search(self, db: DB) -> AppsResult<()> {
         let Self { stop_receiver } = self;
 
@@ -73,11 +74,18 @@ impl AppsFinder {
             p.exists().then_some(p)
         });
 
-        let search_paths = DEFAULT_PATHS
+        let icon_paths = DEFAULT_PATHS
+            .iter()
+            .chain(xdg_paths.iter())
+            .chain(home_icons_path.iter())
+            .unique()
+            .cloned()
+            .collect_vec();
+
+        let app_paths = DEFAULT_PATHS
             .iter()
             .chain(xdg_paths.iter())
             .chain(home_share_path.iter())
-            .chain(home_icons_path.iter())
             .unique()
             .cloned()
             .collect_vec();
@@ -86,108 +94,68 @@ impl AppsFinder {
         {
             let db_clone = db.clone();
             let stop_receiver_clone = stop_receiver.clone();
-            tasks.spawn(
-                async move {
-                    let mut desktop_entries_stream = LiveSearchAppsQuery
-                        .instrumented_execute(db_clone.clone())
-                        .await?;
 
+            tasks.spawn(async move {
+                let mut desktop_entries_stream = LiveSearchAppsQuery
+                    .instrumented_execute(db_clone.clone())
+                    .await?;
+
+                check_stop!([AppsError] stop_receiver_clone);
+
+                while let Some(entry) = desktop_entries_stream.next().await {
                     check_stop!([AppsError] stop_receiver_clone);
 
-                    while let Some(entry) = desktop_entries_stream.next().await {
-                        check_stop!([AppsError] stop_receiver_clone);
-
-                        match entry {
-                            Ok(Notification { action, data, .. }) => match action {
-                                value::Action::Create => {
-                                    let _ = CreateAppEntryQuery::new(data)
-                                        .inspect_err(|err| tracing::error!("{err}"))?
-                                        .instrumented_execute(db_clone.clone())
-                                        .await;
-                                }
-                                value::Action::Update => {
-                                    tracing::error!("UPDATE???");
-                                    // TODO
-                                }
-                                value::Action::Delete => {
-                                    tracing::error!("DELETE???");
-                                    // TODO
-                                }
-                                _ => todo!(),
-                            },
-                            Err(err) => {
-                                tracing::error!("{err}");
-                                continue;
+                    match entry {
+                        Ok(Notification { action, data, .. }) => match action {
+                            value::Action::Create => {
+                                let _ = CreateAppEntryQuery::new(data)
+                                    .inspect_err(|err| tracing::error!("{err}"))?
+                                    .instrumented_execute(db_clone.clone())
+                                    .await;
                             }
+                            value::Action::Update => {
+                                tracing::error!("UPDATE???");
+                                // TODO
+                            }
+                            value::Action::Delete => {
+                                tracing::error!("DELETE???");
+                                // TODO
+                            }
+                            _ => todo!(),
+                        },
+                        Err(err) => {
+                            tracing::error!("{err}");
+                            continue;
                         }
                     }
-
-                    Ok(())
                 }
-                .instrument(tracing::debug_span!("Check desktop entries")),
-            );
+
+                Ok(())
+            });
         }
 
-        // Icons & .desktop Search
-        {
-            let db_clone = db.clone();
-            let stop_receiver_clone = stop_receiver.clone();
-            tasks.spawn(
-                async move {
-                    let mut index_tasks = JoinSet::new();
+        // .desktop Search
+        Self::search_paths()
+            .tasks(&mut tasks)
+            .stop_receiver(stop_receiver.clone())
+            .db(db.clone())
+            .paths(app_paths)
+            .exts(vec!["desktop"])
+            .kind(".desktop")
+            .call();
 
-                    check_stop!([AppsError] stop_receiver_clone);
-
-                    search_paths.into_iter().for_each(|path| {
-                        index_tasks.spawn(
-                            fs::index()
-                                .root(path.clone())
-                                .db(db_clone.clone())
-                                .pre_filter(|path| {
-                                    if path.is_dir() {
-                                        return None;
-                                    }
-
-                                    let Some(ext) = path.extension().and_then(|x| x.to_str())
-                                    else {
-                                        return Some(false);
-                                    };
-
-                                    if [
-                                        "png", "jpg", "jpeg", "gif", "webp", "pbm", "pam", "ppm",
-                                        "pgm", "tiff", "tif", "tga", "dds", "bmp", "ico", "hdr",
-                                        "exr", "ff", "avif", "qoi", "pcx", "svg", "xpm", "desktop",
-                                    ]
-                                    .contains(&ext)
-                                    {
-                                        return None;
-                                    }
-
-                                    Some(false)
-                                })
-                                .stop_receiver(stop_receiver_clone.clone())
-                                .call()
-                                .instrument(tracing::debug_span!(
-                                    "Index path",
-                                    path = &path.to_string_lossy().to_string()
-                                )),
-                        );
-                    });
-
-                    check_stop!([AppsError] stop_receiver_clone);
-
-                    index_tasks
-                        .join_all()
-                        .instrument(tracing::debug_span!("Wait on index tasks"))
-                        .await
-                        .into_iter()
-                        .collect::<FSResult<Vec<_>>>()?;
-
-                    Ok(())
-                }
-                .instrument(tracing::debug_span!("Index paths tasks")),
-            );
-        }
+        // Icons Search
+        Self::search_paths()
+            .tasks(&mut tasks)
+            .stop_receiver(stop_receiver.clone())
+            .db(db.clone())
+            .paths(icon_paths)
+            .exts(vec![
+                "png", "jpg", "jpeg", "gif", "webp", "pbm", "pam", "ppm", "pgm", "tiff", "tif",
+                "tga", "dds", "bmp", "ico", "hdr", "exr", "ff", "avif", "qoi", "pcx", "svg", "xpm",
+            ])
+            .kind("icon")
+            .call();
 
         tasks
             .join_all()
@@ -197,9 +165,69 @@ impl AppsFinder {
 
         Ok(())
     }
+
+    #[builder]
+    #[tracing::instrument(
+        skip(tasks, stop_receiver, db),
+        level = "debug",
+        name = "AppsFinder::search_paths"
+    )]
+    fn search_paths(
+        tasks: &mut JoinSet<AppsResult<()>>,
+        stop_receiver: tokio_mpmc::Receiver<()>,
+        db: DB,
+        paths: Vec<PathBuf>,
+        exts: Vec<&'static str>,
+        #[builder(into)] kind: String,
+    ) {
+        tasks.spawn(async move {
+            let mut index_tasks = JoinSet::new();
+
+            check_stop!([AppsError] stop_receiver);
+
+            paths.into_iter().for_each(|path| {
+                let exts = exts.clone();
+                let stop_receiver = stop_receiver.clone();
+
+                index_tasks.spawn(
+                    fs::index()
+                        .root(path.clone())
+                        .kind(kind.clone())
+                        .db(db.clone())
+                        .pre_filter(move |path| {
+                            if path.is_dir() {
+                                return Some(false);
+                            }
+
+                            let Some(ext) = path.extension().and_then(|x| x.to_str()) else {
+                                return Some(false);
+                            };
+
+                            if exts.contains(&ext) {
+                                return None;
+                            }
+
+                            Some(false)
+                        })
+                        .stop_receiver(stop_receiver.clone())
+                        .call(),
+                );
+            });
+
+            check_stop!([AppsError] stop_receiver);
+
+            index_tasks
+                .join_all()
+                .await
+                .into_iter()
+                .collect::<FSResult<Vec<_>>>()?;
+
+            Ok(())
+        });
+    }
 }
 
-#[derive(SurrealQuery)]
+#[derive(Debug, SurrealQuery)]
 #[query(
     stream = "PathBuf",
     error = AppsError,

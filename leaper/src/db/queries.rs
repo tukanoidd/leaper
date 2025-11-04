@@ -3,7 +3,7 @@ use surrealdb_extras::SurrealQuery;
 
 use crate::db::DBError;
 
-#[derive(bon::Builder, SurrealQuery)]
+#[derive(Debug, bon::Builder, SurrealQuery)]
 #[query(
     check,
     error = DBError,

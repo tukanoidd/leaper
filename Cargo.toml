@@ -6,8 +6,8 @@ members = ["leaper", "leaper-macros"]
 name = "leaper"
 
 [workspace.dependencies]
-surrealdb = { version = "2.3.6", default-features = false }
-surrealdb-core = "2.3.6"
+surrealdb = { version = "2.3.10", default-features = false }
+surrealdb-core = "2.3.10"
 
 surrealdb-extras = { git = "https://github.com/tukanoidd/surrealdb-extras.git", rev = "83d604846df83d6772562bbe7eadf97a37d02cbc" }
 

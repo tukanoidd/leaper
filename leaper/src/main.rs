@@ -113,31 +113,7 @@ fn init_tracing(trace: bool, debug: bool, error: bool) -> LeaperResult<()> {
     );
 
     #[cfg(feature = "profile")]
-    let layer = {
-        use opentelemetry::trace::TracerProvider;
-
-        let exporter = opentelemetry_zipkin::ZipkinExporter::builder().build()?;
-
-        let batch = opentelemetry_sdk::trace::BatchSpanProcessor::builder(exporter)
-            .with_batch_config(
-                opentelemetry_sdk::trace::BatchConfigBuilder::default()
-                    .with_max_queue_size(4096)
-                    .build(),
-            )
-            .build();
-
-        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
-            .with_span_processor(batch)
-            .with_resource(
-                opentelemetry_sdk::Resource::builder_empty()
-                    .with_service_name("leaper")
-                    .build(),
-            )
-            .build();
-        let tracer = provider.tracer("leaper");
-
-        tracing_opentelemetry::layer().with_tracer(tracer)
-    };
+    let layer = tracing_tracy::TracyLayer::default();
 
     let registry = tracing_subscriber::registry()
         .with(layer)
@@ -184,7 +160,4 @@ enum LeaperError {
 
     #[lerr(str = "[tokio::mpmc::channel] {0}")]
     TokioMPMCChannel(#[lerr(from, wrap = Arc)] tokio_mpmc::ChannelError),
-
-    #[lerr(str = "[opentelemetry] {0}", profile)]
-    OpenTelemetry(#[lerr(from, wrap = Arc)] opentelemetry_zipkin::ExporterBuildError),
 }

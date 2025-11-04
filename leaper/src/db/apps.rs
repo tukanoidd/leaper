@@ -39,7 +39,7 @@ pub struct AppEntry {
     pub icon_name: Option<String>,
 }
 
-#[derive(SurrealQuery)]
+#[derive(Debug, SurrealQuery)]
 #[query(
     output = "Option<RecordId>",
     error = AppsError,
@@ -134,7 +134,7 @@ pub struct AppWithIcon {
     pub icon: Option<AppIcon>,
 }
 
-#[derive(SurrealQuery)]
+#[derive(Debug, SurrealQuery)]
 #[query(
     output = "Vec<AppWithIcon>",
     error = AppsError,
@@ -145,7 +145,7 @@ pub struct AppWithIcon {
 )]
 pub struct GetAppWithIconsQuery;
 
-#[derive(SurrealQuery)]
+#[derive(Debug, SurrealQuery)]
 #[query(
     stream = "AppWithIcon",
     error = AppsError,
@@ -157,7 +157,7 @@ pub struct GetAppWithIconsQuery;
 )]
 pub struct GetLiveAppWithIconsQuery;
 
-#[derive(SurrealQuery)]
+#[derive(Debug, SurrealQuery)]
 #[query(
     stream = "AppWithIcon",
     error = AppsError,

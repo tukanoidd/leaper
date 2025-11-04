@@ -9,9 +9,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     flake-utils.url = "github:numtide/flake-utils";
+
+    tracy = {
+      url = "github:tukanoidd/tracy.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = {
+  outputs = inputs @ {
     self,
     nixpkgs,
     crane,
@@ -44,7 +49,12 @@
           src = craneLib.cleanCargoSource ./.;
           strictDeps = true;
 
-          buildInputs = libs;
+          nativeBuildInputs = with pkgs; [
+            rustPlatform.bindgenHook
+          ];
+
+          buildInputs =
+            libs;
           passthru.runtimeLibsPath = libsPath;
         };
 
@@ -56,6 +66,8 @@
             postFixup = ''
               patchelf $out/bin/leaper --add-rpath ${libsPath}
             '';
+
+            NIX_OUTPATH_USED_AS_RANDOM_SEED = "__leaper__";
           }
         );
       in {
@@ -87,7 +99,11 @@
             cargo-modules
 
             surrealdb
+
+            inputs.tracy.packages.${system}.default
           ];
+
+          hardeningDisable = ["fortify"];
 
           shellHook = ''
             export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${libsPath}";

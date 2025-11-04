@@ -13,7 +13,6 @@ use surrealdb::{
     opt::{Config, capabilities::Capabilities},
 };
 use surrealdb_extras::{SurrealExt, SurrealQuery, SurrealTableInfo};
-use tracing::{Instrument, debug_span};
 
 use crate::{
     LeaperError, LeaperResult,
@@ -25,9 +24,13 @@ use crate::{
 
 #[cfg(not(feature = "db-websocket"))]
 pub type Db = surrealdb::engine::local::Db;
+#[cfg(not(feature = "db-websocket"))]
+pub type Scheme = surrealdb::engine::local::RocksDb;
 
 #[cfg(feature = "db-websocket")]
 pub type Db = surrealdb::engine::remote::ws::Client;
+#[cfg(feature = "db-websocket")]
+pub type Scheme = surrealdb::engine::remove::ws::Ws;
 
 pub type DB = Surreal<Db>;
 
@@ -40,7 +43,7 @@ pub async fn init_db(
     #[cfg(not(feature = "db-websocket"))]
     let endpoint = project_dirs.data_local_dir().join("db");
 
-    let db = DB::new((
+    let db = DB::new::<Scheme>((
         endpoint,
         Config::default()
             .capabilities(Capabilities::all().with_all_experimental_features_allowed())
@@ -75,12 +78,12 @@ pub trait InstrumentedSurrealQuery: SurrealQuery {
 
 impl<Q> InstrumentedSurrealQuery for Q
 where
-    Q: SurrealQuery,
+    Q: SurrealQuery + std::fmt::Debug,
     Q::Error: std::fmt::Display,
 {
+    #[tracing::instrument(skip(db), fields(QUERY_STR = Q::QUERY_STR), level = "debug", name = "db::intrumented_execute")]
     async fn instrumented_execute(self, db: DB) -> Result<Self::Output, Self::Error> {
         self.execute(db)
-            .instrument(debug_span!("Calling query", query = Self::QUERY_STR))
             .await
             .inspect_err(|err| tracing::error!("{err}"))
     }
