@@ -1,7 +1,7 @@
 use surrealdb::RecordId;
 use surrealdb_extras::SurrealQuery;
 
-use crate::db::DBError;
+use crate::DBError;
 
 #[derive(Debug, bon::Builder, SurrealQuery)]
 #[query(

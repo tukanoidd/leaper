@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     path::PathBuf,
     sync::{Arc, LazyLock},
 };
@@ -7,17 +8,12 @@ use futures::StreamExt;
 use itertools::Itertools;
 
 use macros::lerror;
-use surrealdb::{Notification, value};
-use surrealdb_extras::SurrealQuery;
 use tokio::task::JoinSet;
 
-use crate::{
-    check_stop,
-    db::{
-        DB, InstrumentedSurrealQuery,
-        apps::CreateAppEntryQuery,
-        fs::{self, FSError, FSResult},
-    },
+use db::{
+    DB, DBAction, DBNotification, DBResult, InstrumentedSurrealQuery,
+    apps::{CreateAppEntryQuery, LiveSearchAppsQuery},
+    check_stop, fs,
 };
 
 #[derive(Clone, derive_more::Debug)]
@@ -106,18 +102,18 @@ impl AppsFinder {
                     check_stop!([AppsError] stop_receiver_clone);
 
                     match entry {
-                        Ok(Notification { action, data, .. }) => match action {
-                            value::Action::Create => {
+                        Ok(DBNotification { action, data, .. }) => match action {
+                            DBAction::Create => {
                                 let _ = CreateAppEntryQuery::new(data)
                                     .inspect_err(|err| tracing::error!("{err}"))?
                                     .instrumented_execute(db_clone.clone())
                                     .await;
                             }
-                            value::Action::Update => {
+                            DBAction::Update => {
                                 tracing::error!("UPDATE???");
                                 // TODO
                             }
-                            value::Action::Delete => {
+                            DBAction::Delete => {
                                 tracing::error!("DELETE???");
                                 // TODO
                             }
@@ -185,9 +181,15 @@ impl AppsFinder {
 
             check_stop!([AppsError] stop_receiver);
 
+            let mut indexed = HashSet::new();
+
             paths.into_iter().for_each(|path| {
                 let exts = exts.clone();
                 let stop_receiver = stop_receiver.clone();
+
+                if indexed.contains(&path) {
+                    return;
+                }
 
                 index_tasks.spawn(
                     fs::index()
@@ -212,6 +214,8 @@ impl AppsFinder {
                         .stop_receiver(stop_receiver.clone())
                         .call(),
                 );
+
+                indexed.insert(path);
             });
 
             check_stop!([AppsError] stop_receiver);
@@ -220,37 +224,18 @@ impl AppsFinder {
                 .join_all()
                 .await
                 .into_iter()
-                .collect::<FSResult<Vec<_>>>()?;
+                .collect::<DBResult<Vec<_>>>()?;
 
             Ok(())
         });
     }
 }
 
-#[derive(Debug, SurrealQuery)]
-#[query(
-    stream = "PathBuf",
-    error = AppsError,
-    sql = "
-        LIVE SELECT VALUE in.path
-            FROM is_file
-            WHERE out.ext == 'desktop';
-    "
-)]
-struct LiveSearchAppsQuery;
-
 #[lerror]
 #[lerr(prefix = "[apps]", result_name = AppsResult)]
 pub enum AppsError {
     #[lerr(str = "Path {0:?} doesn't have a file name...")]
     NoFileName(PathBuf),
-
-    #[lerr(str = "{0:?} provides no name!")]
-    DesktopEntryNoName(PathBuf),
-    #[lerr(str = "{0:?} provides no exec!")]
-    DesktopEntryNoExec(PathBuf),
-    #[lerr(str = "Failed to parse exec '{1}' from {0:?}!")]
-    DesktopEntryParseExec(PathBuf, String),
 
     #[lerr(str = "Interrupted by parent")]
     InterruptedByParent,
@@ -265,18 +250,11 @@ pub enum AppsError {
     #[lerr(str = "[tokio::sync::mpsc::send<PathBuf>] {0}")]
     TokioMpscSendPathBuf(#[lerr(from)] tokio::sync::mpsc::error::SendError<PathBuf>),
 
-    #[lerr(str = "[surrealdb] {0}")]
-    DB(#[lerr(from, wrap = Arc)] surrealdb::Error),
-    #[lerr(str = "[db::fs] {0}")]
-    FS(#[lerr(from)] FSError),
+    #[lerr(str = "[leaper_db] {0}")]
+    DB(#[lerr(from, wrap = Arc)] db::DBError),
 
     #[lerr(str = "[image] {0}")]
     Image(#[lerr(from, wrap = Arc)] image::ImageError),
-
-    #[lerr(str = "[.desktop::decode] {0}")]
-    DesktopEntryParse(#[lerr(from, wrap = Arc)] freedesktop_desktop_entry::DecodeError),
-    #[lerr(str = "[.desktop::exec] {0}")]
-    DesktopEntryExec(#[lerr(from, wrap = Arc)] freedesktop_desktop_entry::ExecError),
 
     #[lerr(str = "[dynamic] {0}")]
     Dynamic(String),

@@ -18,24 +18,23 @@ use iced_aw::Spinner;
 use iced_fonts::{NERD_FONT, Nerd, nerd::icon_to_string};
 use itertools::Itertools;
 
-use crate::{
-    app::{
-        AppTask,
-        mode::{
-            AppModeElement, AppModeMsg, AppModeTask,
-            apps::search::{AppsFinder, AppsResult},
-        },
-        style::{app_scrollable_style, app_text_input_style},
+use db::{
+    DB, DBResult, InstrumentedSurrealQuery,
+    apps::{AppWithIcon, GetAppWithIconsQuery},
+};
+
+use crate::app::{
+    AppTask,
+    mode::{
+        AppModeElement, AppModeMsg, AppModeTask,
+        apps::search::{AppsFinder, AppsResult},
     },
-    db::{
-        DB, InstrumentedSurrealQuery,
-        apps::{AppWithIcon, GetAppWithIconsQuery},
-    },
+    style::{app_scrollable_style, app_text_input_style},
 };
 
 type AppsIcons = Vec<AppWithIcon>;
 
-type InitAppsIconsResult = AppsResult<AppsIcons>;
+type InitAppsIconsResult = DBResult<AppsIcons>;
 type LoadAppsIconsResult = AppsResult<()>;
 
 #[derive(Default)]

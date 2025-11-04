@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -7,7 +7,7 @@ use surrealdb_extras::{SurrealQuery, SurrealTable};
 use tracing::Instrument;
 use vfs::async_vfs::{AsyncPhysicalFS, AsyncVfsPath};
 
-use crate::db::{DB, DBError, InstrumentedSurrealQuery, queries::RelateQuery};
+use crate::{DB, DBError, DBResult, InstrumentedSurrealQuery, queries::RelateQuery};
 
 #[macro_export]
 macro_rules! check_stop {
@@ -52,9 +52,9 @@ pub async fn index(
     #[builder(default)] parents: bool,
     pre_filter: impl Fn(&PathBuf) -> Option<bool> + Clone + Send + Sync + 'static,
     mut stop_receiver: Option<tokio_mpmc::Receiver<()>>,
-) -> FSResult<()> {
+) -> DBResult<()> {
     if let Some(stop_receiver) = &mut stop_receiver {
-        check_stop!([FSError] stop_receiver);
+        check_stop!([DBError] stop_receiver);
     }
 
     let mut walkdir = AsyncVfsPath::new(AsyncPhysicalFS::new(&root))
@@ -111,7 +111,7 @@ pub async fn index(
         .boxed();
 
     if let Some(stop_receiver) = stop_receiver.clone() {
-        check_stop!([FSError] stop_receiver);
+        check_stop!([DBError] stop_receiver);
     }
 
     while let Some(_) = walkdir
@@ -123,7 +123,7 @@ pub async fn index(
         .await
     {
         if let Some(stop_receiver) = stop_receiver.clone() {
-            check_stop!([FSError] stop_receiver);
+            check_stop!([DBError] stop_receiver);
         }
     }
 
@@ -150,7 +150,7 @@ pub struct FSNode {
 impl FSNode {
     #[builder]
     #[tracing::instrument(skip(db), level = "debug", name = "fs::FSNode::add_db")]
-    async fn add_db(#[builder(into)] path: PathBuf, db: DB, parents: bool) -> FSResult<RecordId> {
+    async fn add_db(#[builder(into)] path: PathBuf, db: DB, parents: bool) -> DBResult<RecordId> {
         if let Some(id) = FindNodeByPathQuery::builder()
             .path(&path)
             .build()
@@ -195,7 +195,7 @@ impl FSNode {
         level = "debug",
         name = "fs::FSNode::add_parent"
     )]
-    async fn add_parent(path: PathBuf, child_fs_node_id: RecordId, db: DB) -> FSResult<RecordId> {
+    async fn add_parent(path: PathBuf, child_fs_node_id: RecordId, db: DB) -> DBResult<RecordId> {
         // Should be fine as we only call this function on parent directories of nodes
         let parent_fs_node_id: RecordId = Box::pin(
             FSNode::add_db()
@@ -221,7 +221,7 @@ impl FSNode {
 #[derive(Debug, bon::Builder, SurrealQuery)]
 #[query(
     output = "Option<RecordId>",
-    error = FSError,
+    error = DBError,
     sql = "SELECT VALUE id FROM ONLY fs_node WHERE path == {path} LIMIT 1"
 )]
 struct FindNodeByPathQuery {
@@ -232,7 +232,7 @@ struct FindNodeByPathQuery {
 #[derive(Debug, SurrealQuery)]
 #[query(
     output = "Option<RecordId>",
-    error = FSError,
+    error = DBError,
     sql = "(CREATE fs_node SET path = {path}, name = {name}).id"
 )]
 struct CreateFsNodeQuery {
@@ -264,7 +264,7 @@ pub struct Directory {
 
 impl Directory {
     #[tracing::instrument(skip(db), level = "debug", name = "fs::Directory::add_db")]
-    async fn add_db(fs_node_id: RecordId, db: DB) -> FSResult<()> {
+    async fn add_db(fs_node_id: RecordId, db: DB) -> DBResult<()> {
         CreateDirectoryQuery::builder()
             .fs_node(fs_node_id)
             .build()
@@ -280,7 +280,7 @@ impl Directory {
 #[derive(Debug, bon::Builder, SurrealQuery)]
 #[query(
     check,
-    error = FSError,
+    error = DBError,
     sql = "
         BEGIN TRANSACTION;
 
@@ -353,7 +353,7 @@ pub struct File {
 
 impl File {
     #[tracing::instrument(skip(db), level = "debug", name = "fs::File::add_db")]
-    async fn add_db(path: PathBuf, fs_node_id: RecordId, db: DB) -> FSResult<()> {
+    async fn add_db(path: PathBuf, fs_node_id: RecordId, db: DB) -> DBResult<()> {
         CreateFileQuery::builder()
             .fs_node(fs_node_id.clone())
             .maybe_ext(
@@ -379,7 +379,7 @@ impl File {
 #[derive(Debug, bon::Builder, SurrealQuery)]
 #[query(
     check,
-    error = FSError,
+    error = DBError,
     sql = "
         BEGIN TRANSACTION;
 
@@ -417,7 +417,7 @@ impl Symlink {
         fs_node_id: RecordId,
         db: DB,
         parents: bool,
-    ) -> FSResult<()> {
+    ) -> DBResult<()> {
         let links_to = match path.read_link() {
             Ok(path) => path,
             Err(err) => {
@@ -449,7 +449,7 @@ impl Symlink {
 #[derive(Debug, bon::Builder, SurrealQuery)]
 #[query(
     check,
-    error = FSError,
+    error = DBError,
     sql = "
         BEGIN TRANSACTION;
 
@@ -463,28 +463,4 @@ impl Symlink {
 struct CreateSymlinkQuery {
     fs_node: RecordId,
     symlinked_fs_node: RecordId,
-}
-
-#[macros::lerror]
-#[lerr(prefix = "[leaper::db::fs]", result_name = FSResult)]
-pub enum FSError {
-    #[lerr(str = "Interrupted by parent")]
-    InterruptedByParent,
-    #[lerr(str = "Lost connection to the parent")]
-    LostConnectionToParent,
-
-    #[lerr(str = "[std::io] {0}")]
-    IO(#[lerr(from, wrap = Arc)] std::io::Error),
-
-    #[lerr(str = "[vfs] {0}")]
-    VFS(#[lerr(from, wrap = Arc)] vfs::VfsError),
-
-    #[lerr(str = "[tokio::task::join] {0}")]
-    Join(#[lerr(from, wrap = Arc)] tokio::task::JoinError),
-
-    #[lerr(str = "[surreal] {0}")]
-    Surreal(#[lerr(from, wrap = Arc)] surrealdb::Error),
-
-    #[lerr(str = "{0}")]
-    DB(#[lerr(from)] DBError),
 }

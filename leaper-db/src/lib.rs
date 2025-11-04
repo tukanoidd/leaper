@@ -2,9 +2,9 @@ pub mod apps;
 pub mod fs;
 pub mod queries;
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
-#[cfg(not(feature = "db-websocket"))]
+#[cfg(not(feature = "websocket"))]
 use directories::ProjectDirs;
 
 use macros::lerror;
@@ -15,32 +15,29 @@ use surrealdb::{
 use surrealdb_extras::{SurrealExt, SurrealQuery, SurrealTableInfo};
 
 use crate::{
-    LeaperError, LeaperResult,
-    db::{
-        apps::{AppEntry, AppIcon},
-        fs::{Directory, FSNode, File, Symlink},
-    },
+    apps::{AppEntry, AppIcon},
+    fs::{Directory, FSNode, File, Symlink},
 };
 
-#[cfg(not(feature = "db-websocket"))]
+#[cfg(not(feature = "websocket"))]
 pub type Db = surrealdb::engine::local::Db;
-#[cfg(not(feature = "db-websocket"))]
+#[cfg(not(feature = "websocket"))]
 pub type Scheme = surrealdb::engine::local::RocksDb;
 
-#[cfg(feature = "db-websocket")]
+#[cfg(feature = "websocket")]
 pub type Db = surrealdb::engine::remote::ws::Client;
-#[cfg(feature = "db-websocket")]
+#[cfg(feature = "websocket")]
 pub type Scheme = surrealdb::engine::remove::ws::Ws;
 
 pub type DB = Surreal<Db>;
+pub type DBNotification<T> = surrealdb::Notification<T>;
+pub type DBAction = surrealdb::value::Action;
 
-pub async fn init_db(
-    #[cfg(not(feature = "db-websocket"))] project_dirs: ProjectDirs,
-) -> LeaperResult<DB> {
-    #[cfg(feature = "db-websocket")]
+pub async fn init_db(#[cfg(not(feature = "websocket"))] project_dirs: ProjectDirs) -> DBResult<DB> {
+    #[cfg(feature = "websocket")]
     let endpoint = "localhost:8000";
 
-    #[cfg(not(feature = "db-websocket"))]
+    #[cfg(not(feature = "websocket"))]
     let endpoint = project_dirs.data_local_dir().join("db");
 
     let db = DB::new::<Scheme>((
@@ -64,8 +61,8 @@ pub async fn init_db(
             AppIcon::register(),
         ]
         .into_iter()
-        .map(|res| res.map_err(LeaperError::SurrealExtra))
-        .collect::<LeaperResult<Vec<_>>>()?,
+        .map(|res| res.map_err(DBError::SurrealExtra))
+        .collect::<DBResult<Vec<_>>>()?,
     )
     .await?;
 
@@ -73,7 +70,10 @@ pub async fn init_db(
 }
 
 pub trait InstrumentedSurrealQuery: SurrealQuery {
-    async fn instrumented_execute(self, db: DB) -> Result<Self::Output, Self::Error>;
+    fn instrumented_execute(
+        self,
+        db: DB,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>>;
 }
 
 impl<Q> InstrumentedSurrealQuery for Q
@@ -94,4 +94,32 @@ where
 pub enum DBError {
     #[lerr(str = "[surrealdb] {0}")]
     Surreal(#[lerr(from, wrap = Arc)] surrealdb::Error),
+    #[lerr(str = "[surrealdb_extras] {0}")]
+    SurrealExtra(String),
+
+    #[lerr(str = "{0:?} provides no name!")]
+    DesktopEntryNoName(PathBuf),
+    #[lerr(str = "{0:?} provides no exec!")]
+    DesktopEntryNoExec(PathBuf),
+    #[lerr(str = "Failed to parse exec '{1}' from {0:?}!")]
+    DesktopEntryParseExec(PathBuf, String),
+
+    #[lerr(str = "[.desktop::decode] {0}")]
+    DesktopEntryParse(#[lerr(from, wrap = Arc)] freedesktop_desktop_entry::DecodeError),
+    #[lerr(str = "[.desktop::exec] {0}")]
+    DesktopEntryExec(#[lerr(from, wrap = Arc)] freedesktop_desktop_entry::ExecError),
+
+    #[lerr(str = "Interrupted by parent")]
+    InterruptedByParent,
+    #[lerr(str = "Lost connection to the parent")]
+    LostConnectionToParent,
+
+    #[lerr(str = "[std::io] {0}")]
+    IO(#[lerr(from, wrap = Arc)] std::io::Error),
+
+    #[lerr(str = "[vfs] {0}")]
+    VFS(#[lerr(from, wrap = Arc)] vfs::VfsError),
+
+    #[lerr(str = "[tokio::task::join] {0}")]
+    Join(#[lerr(from, wrap = Arc)] tokio::task::JoinError),
 }

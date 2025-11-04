@@ -15,6 +15,12 @@ use iced::{
 };
 use tokio_stream::StreamExt;
 
+use db::{
+    DB, DBAction, DBResult, InstrumentedSurrealQuery,
+    apps::{GetLiveAppIconUpdates, GetLiveAppWithIconsQuery},
+    init_db,
+};
+
 use crate::{
     LeaperResult,
     app::mode::{
@@ -25,11 +31,6 @@ use crate::{
     },
     cli,
     config::Config,
-    db::{
-        DB, InstrumentedSurrealQuery,
-        apps::{GetLiveAppIconUpdates, GetLiveAppWithIconsQuery},
-        init_db,
-    },
 };
 
 pub type AppTheme = iced::Theme;
@@ -251,7 +252,7 @@ impl App {
                                 };
 
                                 match notification.action {
-                                    surrealdb::Action::Create | surrealdb::Action::Update => {
+                                    DBAction::Create | DBAction::Update => {
                                         if let Err(err) = msg_sender
                                             .send(
                                                 AppModeMsg::Apps(AppsMsg::AddApp(
@@ -297,7 +298,7 @@ pub enum AppMsg {
         app_search_stop_sender: Option<tokio_mpmc::Sender<()>>,
     },
 
-    InitDB(LeaperResult<DB>),
+    InitDB(DBResult<DB>),
 
     Mode(AppModeMsg),
 

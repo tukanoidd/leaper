@@ -539,9 +539,9 @@ dependencies = [
 
 [[package]]
 name = "async-std"
-version = "1.13.1"
+version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "730294c1c08c2e0f85759590518f6333f0d5a0a766a27d519c1b244c3dfd8a24"
+checksum = "2c8e079a4ab67ae52b7403632e4618815d6db36d2a010cfe41b02c1b1578f93b"
 dependencies = [
  "async-channel 1.9.0",
  "async-global-executor",
@@ -1645,7 +1645,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e3d747f100290a1ca24b752186f61f6637e1deffe3bf6320de6fcb29510a307"
 dependencies = [
  "bitflags 2.10.0",
- "libloading 0.7.4",
+ "libloading 0.8.9",
  "winapi",
 ]
 
@@ -1881,7 +1881,7 @@ checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
 dependencies = [
  "libc",
  "option-ext",
- "redox_users 0.5.0",
+ "redox_users 0.5.2",
  "windows-sys 0.61.2",
 ]
 
@@ -1919,7 +1919,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330c60081dcc4c72131f8eb70510f1ac07223e5d4163db481a04a0befcffa412"
 dependencies = [
- "libloading 0.7.4",
+ "libloading 0.8.9",
 ]
 
 [[package]]
@@ -2261,14 +2261,14 @@ dependencies = [
 
 [[package]]
 name = "filetime"
-version = "0.2.25"
+version = "0.2.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35c0522e981e68cbfa8c3f978441a5f34b30b96e146b33cd3359176b50fe8586"
+checksum = "bc0505cd1b6fa6580283f6bdf70a73fcf4aba1184038c90902b92b3dd0df63ed"
 dependencies = [
  "cfg-if",
  "libc",
  "libredox",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2873,7 +2873,7 @@ dependencies = [
  "bitflags 2.10.0",
  "com",
  "libc",
- "libloading 0.7.4",
+ "libloading 0.8.9",
  "thiserror 1.0.69",
  "widestring",
  "winapi",
@@ -3720,7 +3720,6 @@ dependencies = [
  "derive_more",
  "directories",
  "ez-pixmap",
- "freedesktop-desktop-entry",
  "futures",
  "heck",
  "iced",
@@ -3729,6 +3728,7 @@ dependencies = [
  "iced_layershell",
  "image 0.25.8",
  "itertools 0.14.0",
+ "leaper-db",
  "leaper-macros",
  "logind-zbus",
  "nucleo",
@@ -3736,8 +3736,6 @@ dependencies = [
  "serde",
  "shlex",
  "smart-default",
- "surrealdb",
- "surrealdb-extras",
  "thiserror 2.0.17",
  "tokio",
  "tokio-mpmc",
@@ -3748,6 +3746,26 @@ dependencies = [
  "tracing-tracy",
  "vfs",
  "zbus 5.12.0",
+]
+
+[[package]]
+name = "leaper-db"
+version = "0.1.0"
+dependencies = [
+ "bon",
+ "directories",
+ "freedesktop-desktop-entry",
+ "futures",
+ "leaper-macros",
+ "serde",
+ "shlex",
+ "surrealdb",
+ "surrealdb-extras",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-mpmc",
+ "tracing",
+ "vfs",
 ]
 
 [[package]]
@@ -5604,9 +5622,9 @@ dependencies = [
 
 [[package]]
 name = "redox_users"
-version = "0.5.0"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd6f9d3d47bdd2ad6945c5015a226ec6155d0bcdfd8f7cd29f86b71f8de99d2b"
+checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
 dependencies = [
  "getrandom 0.2.16",
  "libredox",
@@ -7404,7 +7422,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "319c70195101a93f56db4c74733e272d720768e13471f400c78406a326b172b0"
 dependencies = [
  "cc",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -8027,7 +8045,7 @@ dependencies = [
  "js-sys",
  "log",
  "naga",
- "parking_lot 0.11.2",
+ "parking_lot 0.12.5",
  "profiling",
  "raw-window-handle",
  "smallvec",
@@ -8055,7 +8073,7 @@ dependencies = [
  "log",
  "naga",
  "once_cell",
- "parking_lot 0.11.2",
+ "parking_lot 0.12.5",
  "profiling",
  "raw-window-handle",
  "rustc-hash 1.1.0",
@@ -8090,14 +8108,14 @@ dependencies = [
  "js-sys",
  "khronos-egl",
  "libc",
- "libloading 0.7.4",
+ "libloading 0.8.9",
  "log",
  "metal",
  "naga",
  "ndk-sys 0.5.0+25.2.9519653",
  "objc",
  "once_cell",
- "parking_lot 0.11.2",
+ "parking_lot 0.12.5",
  "profiling",
  "range-alloc",
  "raw-window-handle",

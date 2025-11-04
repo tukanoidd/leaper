@@ -1,7 +1,6 @@
 mod app;
 mod cli;
 mod config;
-mod db;
 mod executor;
 
 use std::sync::Arc;
@@ -152,11 +151,6 @@ enum LeaperError {
 
     #[lerr(str = "Failed to connect to session bus: {0}")]
     ZBus(#[lerr(from)] zbus::Error),
-
-    #[lerr(str = "[surrealdb] {0}")]
-    Surreal(#[lerr(from, wrap = Arc)] surrealdb::Error),
-    #[lerr(str = "[surrealdb_extras] {0}")]
-    SurrealExtra(String),
 
     #[lerr(str = "[tokio::mpmc::channel] {0}")]
     TokioMPMCChannel(#[lerr(from, wrap = Arc)] tokio_mpmc::ChannelError),
