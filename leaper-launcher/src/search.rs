@@ -1,20 +1,17 @@
-use std::{
-    collections::HashSet,
-    path::PathBuf,
-    sync::{Arc, LazyLock},
-};
+use std::{collections::HashSet, path::PathBuf, sync::LazyLock};
 
 use futures::StreamExt;
 use itertools::Itertools;
 
-use macros::lerror;
 use tokio::task::JoinSet;
 
 use db::{
-    DB, DBAction, DBNotification, DBResult, InstrumentedSurrealQuery,
+    DB, DBAction, DBNotification, DBResult, InstrumentedDBQuery,
     apps::{CreateAppEntryQuery, LiveSearchAppsQuery},
     check_stop, fs,
 };
+
+use crate::{LeaperLauncherError, LeaperLauncherResult};
 
 #[derive(Clone, derive_more::Debug)]
 pub struct AppsFinder {
@@ -32,7 +29,7 @@ impl AppsFinder {
     }
 
     #[tracing::instrument(skip_all, level = "debug", name = "AppsFinder::search")]
-    pub async fn search(self, db: DB) -> AppsResult<()> {
+    pub async fn search(self, db: DB) -> LeaperLauncherResult<()> {
         let Self { stop_receiver } = self;
 
         let mut tasks = JoinSet::new();
@@ -96,10 +93,10 @@ impl AppsFinder {
                     .instrumented_execute(db_clone.clone())
                     .await?;
 
-                check_stop!([AppsError] stop_receiver_clone);
+                check_stop!([LeaperLauncherError] stop_receiver_clone);
 
                 while let Some(entry) = desktop_entries_stream.next().await {
-                    check_stop!([AppsError] stop_receiver_clone);
+                    check_stop!([LeaperLauncherError] stop_receiver_clone);
 
                     match entry {
                         Ok(DBNotification { action, data, .. }) => match action {
@@ -157,7 +154,7 @@ impl AppsFinder {
             .join_all()
             .await
             .into_iter()
-            .collect::<AppsResult<Vec<_>>>()?;
+            .collect::<LeaperLauncherResult<Vec<_>>>()?;
 
         Ok(())
     }
@@ -169,7 +166,7 @@ impl AppsFinder {
         name = "AppsFinder::search_paths"
     )]
     fn search_paths(
-        tasks: &mut JoinSet<AppsResult<()>>,
+        tasks: &mut JoinSet<LeaperLauncherResult<()>>,
         stop_receiver: tokio_mpmc::Receiver<()>,
         db: DB,
         paths: Vec<PathBuf>,
@@ -179,7 +176,7 @@ impl AppsFinder {
         tasks.spawn(async move {
             let mut index_tasks = JoinSet::new();
 
-            check_stop!([AppsError] stop_receiver);
+            check_stop!([LeaperLauncherError] stop_receiver);
 
             let mut indexed = HashSet::new();
 
@@ -218,7 +215,7 @@ impl AppsFinder {
                 indexed.insert(path);
             });
 
-            check_stop!([AppsError] stop_receiver);
+            check_stop!([LeaperLauncherError] stop_receiver);
 
             index_tasks
                 .join_all()
@@ -229,33 +226,4 @@ impl AppsFinder {
             Ok(())
         });
     }
-}
-
-#[lerror]
-#[lerr(prefix = "[apps]", result_name = AppsResult)]
-pub enum AppsError {
-    #[lerr(str = "Path {0:?} doesn't have a file name...")]
-    NoFileName(PathBuf),
-
-    #[lerr(str = "Interrupted by parent")]
-    InterruptedByParent,
-    #[lerr(str = "Lost connection to the parent")]
-    LostConnectionToParent,
-
-    #[lerr(str = "[std::io] {0}")]
-    IO(#[lerr(from, wrap = Arc)] std::io::Error),
-
-    #[lerr(str = "[tokio::task::join] {0}")]
-    TokioJoin(#[lerr(from, wrap = Arc)] tokio::task::JoinError),
-    #[lerr(str = "[tokio::sync::mpsc::send<PathBuf>] {0}")]
-    TokioMpscSendPathBuf(#[lerr(from)] tokio::sync::mpsc::error::SendError<PathBuf>),
-
-    #[lerr(str = "[leaper_db] {0}")]
-    DB(#[lerr(from, wrap = Arc)] db::DBError),
-
-    #[lerr(str = "[image] {0}")]
-    Image(#[lerr(from, wrap = Arc)] image::ImageError),
-
-    #[lerr(str = "[dynamic] {0}")]
-    Dynamic(String),
 }

@@ -1,23 +1,13 @@
 mod app;
 mod cli;
-mod config;
-mod executor;
-
-use std::sync::Arc;
 
 use clap::Parser;
+use color_eyre::Result;
+use mode::LeaperMode;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::executor::LeaperExecutor;
-
-fn main() -> color_eyre::Result<()> {
-    use iced_layershell::{
-        build_pattern::MainSettings,
-        reexport::{Anchor, KeyboardInteractivity, Layer},
-        settings::{LayerShellSettings, Settings, StartMode},
-    };
-
-    use crate::{app::App, cli::Cli, config::Config};
+fn main() -> Result<()> {
+    use crate::cli::Cli;
 
     color_eyre::install()?;
 
@@ -30,72 +20,16 @@ fn main() -> color_eyre::Result<()> {
 
     init_tracing(trace, debug, error)?;
 
-    let project_dirs = directories::ProjectDirs::from("com", "tukanoid", "leaper")
-        .ok_or(LeaperError::NoProjectDirs)?;
-
-    let config = Config::open(&project_dirs)?;
-
-    let Settings {
-        fonts,
-        default_font,
-        default_text_size,
-        antialiasing,
-        virtual_keyboard_support,
-        ..
-    } = Settings::<()>::default();
-
-    let size = match mode {
-        cli::AppMode::Apps => Some((500, 800)),
-        cli::AppMode::Runner => Some((600, 100)),
-        cli::AppMode::Power => None,
-    };
-    let anchor = match mode {
-        cli::AppMode::Apps | cli::AppMode::Runner => Anchor::empty(),
-        cli::AppMode::Power => Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right,
-    };
-    let exclusive_zone = match mode {
-        cli::AppMode::Apps | cli::AppMode::Runner => 0,
-        cli::AppMode::Power => -1,
-    };
-
-    let settings = MainSettings {
-        id: Some("com.tukanoid.leaper".into()),
-        layer_settings: LayerShellSettings {
-            anchor,
-            layer: Layer::Overlay,
-            exclusive_zone,
-            size,
-            margin: (0, 0, 0, 0),
-            keyboard_interactivity: KeyboardInteractivity::Exclusive,
-            start_mode: StartMode::Active,
-            events_transparent: false,
-        },
-        fonts,
-        default_font,
-        default_text_size,
-        antialiasing,
-        virtual_keyboard_support,
-    };
-
-    iced_layershell::build_pattern::application("leaper", App::update, App::view)
-        .settings(settings)
-        .theme(App::theme)
-        .subscription(App::subscription)
-        .font(iced_fonts::REQUIRED_FONT_BYTES)
-        .font(iced_fonts::NERD_FONT_BYTES)
-        .executor::<LeaperExecutor>()
-        .run_with(move || {
-            App::builder()
-                .project_dirs(project_dirs)
-                .config(config)
-                .mode(mode)
-                .build()
-        })?;
+    match mode {
+        cli::AppMode::Launcher => launcher::LeaperLauncher::run()?,
+        cli::AppMode::Runner => runner::LeaperRunner::run()?,
+        cli::AppMode::Power => power::LeaperPower::run()?,
+    }
 
     Ok(())
 }
 
-fn init_tracing(trace: bool, debug: bool, error: bool) -> LeaperResult<()> {
+fn init_tracing(trace: bool, debug: bool, error: bool) -> Result<()> {
     let level = error
         .then_some("error")
         .or_else(|| (cfg!(feature = "profile") || trace).then_some("trace"))
@@ -120,35 +54,4 @@ fn init_tracing(trace: bool, debug: bool, error: bool) -> LeaperResult<()> {
     tracing::debug!("Logging initialized!");
 
     Ok(())
-}
-
-#[macros::lerror]
-#[lerr(prefix = "[leaper]", result_name = LeaperResult)]
-enum LeaperError {
-    #[lerr(str = "No ProjectDirs!")]
-    NoProjectDirs,
-    #[lerr(str = "Empty cmd args list for action {0}")]
-    ActionCMDEmpty(String),
-    #[lerr(str = "No dbus connection!")]
-    NoDBusConnection,
-
-    #[lerr(str = "[std::io] {0}")]
-    IO(#[lerr(from, wrap = Arc)] std::io::Error),
-
-    #[lerr(str = "[toml::de] {0}")]
-    TomlDeser(#[lerr(from)] toml::de::Error),
-    #[lerr(str = "[toml::ser] {0}")]
-    TomlSer(#[lerr(from)] toml::ser::Error),
-
-    #[lerr(str = "[tracing::init] {0}")]
-    TracingInit(#[lerr(from, wrap = Arc)] tracing_subscriber::util::TryInitError),
-
-    #[lerr(str = "[iced_layershell] {0}")]
-    IcedLayerShell(#[lerr(from, wrap = Arc)] iced_layershell::Error),
-
-    #[lerr(str = "Failed to connect to session bus: {0}")]
-    ZBus(#[lerr(from)] zbus::Error),
-
-    #[lerr(str = "[tokio::mpmc::channel] {0}")]
-    TokioMPMCChannel(#[lerr(from, wrap = Arc)] tokio_mpmc::ChannelError),
 }

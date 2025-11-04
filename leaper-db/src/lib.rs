@@ -69,14 +69,14 @@ pub async fn init_db(#[cfg(not(feature = "websocket"))] project_dirs: ProjectDir
     Ok(db)
 }
 
-pub trait InstrumentedSurrealQuery: SurrealQuery {
+pub trait InstrumentedDBQuery: SurrealQuery {
     fn instrumented_execute(
         self,
         db: DB,
     ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>>;
 }
 
-impl<Q> InstrumentedSurrealQuery for Q
+impl<Q> InstrumentedDBQuery for Q
 where
     Q: SurrealQuery + std::fmt::Debug,
     Q::Error: std::fmt::Display,
@@ -90,8 +90,17 @@ where
 }
 
 #[lerror]
-#[lerr(prefix = "[leaper::db]", result_name = DBResult)]
+#[lerr(prefix = "[leaper-db]", result_name = DBResult)]
 pub enum DBError {
+    #[lerr(str = "[std::io] {0}")]
+    IO(#[lerr(from, wrap = Arc)] std::io::Error),
+
+    #[lerr(str = "[vfs] {0}")]
+    VFS(#[lerr(from, wrap = Arc)] vfs::VfsError),
+
+    #[lerr(str = "[tokio::task::join] {0}")]
+    Join(#[lerr(from, wrap = Arc)] tokio::task::JoinError),
+
     #[lerr(str = "[surrealdb] {0}")]
     Surreal(#[lerr(from, wrap = Arc)] surrealdb::Error),
     #[lerr(str = "[surrealdb_extras] {0}")]
@@ -113,13 +122,4 @@ pub enum DBError {
     InterruptedByParent,
     #[lerr(str = "Lost connection to the parent")]
     LostConnectionToParent,
-
-    #[lerr(str = "[std::io] {0}")]
-    IO(#[lerr(from, wrap = Arc)] std::io::Error),
-
-    #[lerr(str = "[vfs] {0}")]
-    VFS(#[lerr(from, wrap = Arc)] vfs::VfsError),
-
-    #[lerr(str = "[tokio::task::join] {0}")]
-    Join(#[lerr(from, wrap = Arc)] tokio::task::JoinError),
 }

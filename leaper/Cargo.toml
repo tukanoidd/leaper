@@ -9,59 +9,21 @@ homepage.workspace = true
 
 [features]
 default = []
-db-websocket = ["db/websocket"]
+db-websocket = ["launcher/db-websocket"]
 
-profile = ["tracing-tracy", "macros/profile"]
+profile = ["tracing-tracy"]
 
 [dependencies]
-macros = { path = "../leaper-macros", package = "leaper-macros" }
-db = { path = "../leaper-db", package = "leaper-db" }
-
-directories.workspace = true
-
-vfs.workspace = true
-
-tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
-futures.workspace = true
-tokio-mpmc.workspace = true
-
-shlex.workspace = true
-
-serde.workspace = true
-
-heck.workspace = true
+mode = { path = "../leaper-mode", package = "leaper-mode" }
+launcher = { path = "../leaper-launcher", package = "leaper-launcher" }
+power = { path = "../leaper-power", package = "leaper-power" }
+runner = { path = "../leaper-runner", package = "leaper-runner" }
 
 tracing.workspace = true
 
-bon.workspace = true
-
-thiserror.workspace = true
 color-eyre.workspace = true
 
-iced = { version = "0.13", features = ["tokio", "image", "svg", "advanced"] }
-iced_layershell = "0.13.7"
-iced_aw = { version = "0.12.2", default-features = false, features = [
-  "spinner",
-] }
-iced_fonts = { version = "0.2.1", features = ["nerd"] }
-
 clap = { version = "4.5.51", features = ["derive"] }
-
-tokio-stream = "0.1.17"
-
-logind-zbus = "5.3.2"
-zbus = { version = "5.12.0", features = ["tokio"] }
-
-image = "0.25.8"
-
-nucleo = "0.5.0"
-
-smart-default = "0.7.1"
-derive_more = { version = "2.0.1", features = ["from", "debug"] }
-pastey = "0.1"
-itertools = "0.14"
-
-toml = "0.9.8"
 
 tracing-subscriber = { version = "0.3.20", features = [
   "ansi",
@@ -81,10 +43,3 @@ tracing-tracy = { version = "0.11", default-features = false, features = [
   "ondemand",
   "timer-fallback",
 ], optional = true }
-
-
-dashmap = "6.1.0"
-ez-pixmap = "0.2.2"
-
-[package.metadata.cargo-machete]
-ignored = ["thiserror"]

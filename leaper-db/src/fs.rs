@@ -7,7 +7,7 @@ use surrealdb_extras::{SurrealQuery, SurrealTable};
 use tracing::Instrument;
 use vfs::async_vfs::{AsyncPhysicalFS, AsyncVfsPath};
 
-use crate::{DB, DBError, DBResult, InstrumentedSurrealQuery, queries::RelateQuery};
+use crate::{DB, DBError, DBResult, InstrumentedDBQuery, queries::RelateQuery};
 
 #[macro_export]
 macro_rules! check_stop {
@@ -85,10 +85,10 @@ pub async fn index(
 
                 let path_real = root.join(path.as_str().trim_start_matches('/'));
 
-                if let Some(res) = pre_filter.clone()(&path_real) {
-                    if !res {
-                        return None;
-                    }
+                if let Some(res) = pre_filter.clone()(&path_real)
+                    && !res
+                {
+                    return None;
                 }
 
                 if let Err(err) = FSNode::add_db()
@@ -114,13 +114,14 @@ pub async fn index(
         check_stop!([DBError] stop_receiver);
     }
 
-    while let Some(_) = walkdir
+    while walkdir
         .next()
         .instrument(tracing::debug_span!(
             "fs::index::walkdir::next",
             kind = kind
         ))
         .await
+        .is_some()
     {
         if let Some(stop_receiver) = stop_receiver.clone() {
             check_stop!([DBError] stop_receiver);
@@ -181,10 +182,8 @@ impl FSNode {
             File::add_db(path.clone(), fs_node_id.clone(), db.clone()).await?;
         }
 
-        if parents {
-            if let Some(parent) = path.parent() {
-                Self::add_parent(parent.to_path_buf(), fs_node_id.clone(), db).await?;
-            }
+        if parents && let Some(parent) = path.parent() {
+            Self::add_parent(parent.to_path_buf(), fs_node_id.clone(), db).await?;
         }
 
         Ok(fs_node_id)

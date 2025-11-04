@@ -1027,13 +1027,13 @@ dependencies = [
 
 [[package]]
 name = "calloop"
-version = "0.14.2"
+version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10929724661d1c43856fd87c7a127ae944ec55579134fb485e4136fb6a46fdcb"
+checksum = "cb9f6e1368bd4621d2c86baa7e37de77a938adf5221e5dd3d6133340101b309e"
 dependencies = [
  "bitflags 2.10.0",
  "polling",
- "rustix 0.38.44",
+ "rustix 1.1.2",
  "slab",
  "tracing",
 ]
@@ -1052,12 +1052,12 @@ dependencies = [
 
 [[package]]
 name = "calloop-wayland-source"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "876a7a1dbbe026a55ef47a500b123af5a9a0914520f061d467914cf21be95daf"
+checksum = "138efcf0940a02ebf0cc8d1eff41a1682a46b431630f4c52450d6265876021fa"
 dependencies = [
- "calloop 0.14.2",
- "rustix 0.38.44",
+ "calloop 0.14.3",
+ "rustix 1.1.2",
  "wayland-backend",
  "wayland-client",
 ]
@@ -1770,9 +1770,9 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "data-url"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c297a1c74b71ae29df00c3e22dd9534821d60eb9af5a0192823fa2acea70c2a"
+checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
 name = "dconf_rs"
@@ -3627,11 +3627,12 @@ dependencies = [
 
 [[package]]
 name = "kurbo"
-version = "0.11.2"
+version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1077d333efea6170d9ccb96d3c3026f300ca0773da4938cc4c811daa6df68b0c"
+checksum = "c62026ae44756f8a599ba21140f350303d4f08dcdcc71b5ad9c9bb8128c13c62"
 dependencies = [
  "arrayvec",
+ "euclid",
  "smallvec",
 ]
 
@@ -3682,8 +3683,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e5dd46870775aec1b5265b29f3dbd38845423dff5bb1a11e0f7c12e312e6ecf"
 dependencies = [
  "bitflags 2.10.0",
- "calloop 0.14.2",
- "calloop-wayland-source 0.4.0",
+ "calloop 0.14.3",
+ "calloop-wayland-source 0.4.1",
  "log",
  "raw-window-handle",
  "tempfile",
@@ -3713,39 +3714,15 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 name = "leaper"
 version = "0.1.0"
 dependencies = [
- "bon",
  "clap",
  "color-eyre",
- "dashmap 6.1.0",
- "derive_more",
- "directories",
- "ez-pixmap",
- "futures",
- "heck",
- "iced",
- "iced_aw",
- "iced_fonts 0.2.1",
- "iced_layershell",
- "image 0.25.8",
- "itertools 0.14.0",
- "leaper-db",
- "leaper-macros",
- "logind-zbus",
- "nucleo",
- "pastey",
- "serde",
- "shlex",
- "smart-default",
- "thiserror 2.0.17",
- "tokio",
- "tokio-mpmc",
- "tokio-stream",
- "toml 0.9.8",
+ "leaper-launcher",
+ "leaper-mode",
+ "leaper-power",
+ "leaper-runner",
  "tracing",
  "tracing-subscriber",
  "tracing-tracy",
- "vfs",
- "zbus 5.12.0",
 ]
 
 [[package]]
@@ -3769,6 +3746,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "leaper-executor"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "iced",
+ "tokio",
+]
+
+[[package]]
+name = "leaper-launcher"
+version = "0.1.0"
+dependencies = [
+ "bon",
+ "dashmap 6.1.0",
+ "derive_more",
+ "directories",
+ "ez-pixmap",
+ "futures",
+ "iced",
+ "iced_aw",
+ "iced_fonts 0.2.1",
+ "iced_layershell",
+ "image 0.25.8",
+ "itertools 0.14.0",
+ "leaper-db",
+ "leaper-executor",
+ "leaper-macros",
+ "leaper-mode",
+ "nucleo",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-mpmc",
+ "tokio-stream",
+ "tracing",
+]
+
+[[package]]
 name = "leaper-macros"
 version = "0.1.0"
 dependencies = [
@@ -3777,6 +3791,51 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.108",
+]
+
+[[package]]
+name = "leaper-mode"
+version = "0.1.0"
+dependencies = [
+ "directories",
+ "heck",
+ "iced",
+ "leaper-macros",
+ "serde",
+ "smart-default",
+ "thiserror 2.0.17",
+ "toml 0.9.8",
+]
+
+[[package]]
+name = "leaper-power"
+version = "0.1.0"
+dependencies = [
+ "directories",
+ "iced",
+ "iced_fonts 0.2.1",
+ "iced_layershell",
+ "leaper-macros",
+ "leaper-mode",
+ "logind-zbus",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "zbus 5.12.0",
+]
+
+[[package]]
+name = "leaper-runner"
+version = "0.1.0"
+dependencies = [
+ "directories",
+ "iced",
+ "iced_layershell",
+ "leaper-macros",
+ "leaper-mode",
+ "shlex",
+ "thiserror 2.0.17",
+ "tracing",
 ]
 
 [[package]]
@@ -4221,9 +4280,9 @@ dependencies = [
 
 [[package]]
 name = "mutate_once"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16cf681a23b4d0a43fc35024c176437f9dcd818db34e0f42ab456a0ee5ad497b"
+checksum = "13d2233c9842d08cfe13f9eac96e207ca6a2ea10b80259ebe8ad0268be27d2af"
 
 [[package]]
 name = "naga"
@@ -4974,12 +5033,6 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
-name = "pastey"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3a8cb46bdc156b1c90460339ae6bfd45ba0394e5effbaa640badb4987fdc261"
 
 [[package]]
 name = "path-clean"
@@ -6812,7 +6865,7 @@ version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68c7541fff44b35860c1a7a47a7cadf3e4a304c457b58f9870d9706ece028afc"
 dependencies = [
- "kurbo 0.11.2",
+ "kurbo 0.11.3",
  "siphasher",
 ]
 
@@ -7633,7 +7686,7 @@ dependencies = [
  "flate2",
  "fontdb 0.18.0",
  "imagesize",
- "kurbo 0.11.2",
+ "kurbo 0.11.3",
  "log",
  "pico-args",
  "roxmltree",
@@ -7864,7 +7917,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a36a4a1e2ae0ef1d628f031e441ec5db79fcce5f888e8082b69340eb7fcd90d"
 dependencies = [
  "bitflags 2.10.0",
- "calloop 0.14.2",
+ "calloop 0.14.3",
  "log",
  "memmap2",
  "smol_str",
@@ -8142,9 +8195,9 @@ dependencies = [
 
 [[package]]
 name = "widestring"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd7cf3379ca1aac9eea11fba24fd7e315d621f8dfe35c8d7d2be8b793726e07d"
+checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
 
 [[package]]
 name = "winapi"
@@ -8884,9 +8937,9 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "xml-rs"
-version = "0.8.27"
+version = "0.8.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fd8403733700263c6eb89f192880191f1b83e332f7a20371ddcf421c4a337c7"
+checksum = "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f"
 
 [[package]]
 name = "xmlwriter"

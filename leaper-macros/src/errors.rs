@@ -62,7 +62,6 @@ struct LErrorVariant {
 
     str: LitStr,
     args: Option<ExprArray>,
-    profile: Flag,
 }
 
 impl LErrorVariant {
@@ -73,12 +72,7 @@ impl LErrorVariant {
 
             str,
             args,
-            profile,
         } = self;
-
-        if !cfg!(feature = "profile") && profile.is_present() {
-            return quote!();
-        }
 
         let fields = match fields.style {
             darling::ast::Style::Tuple => {
@@ -111,10 +105,6 @@ impl LErrorVariant {
     }
 
     fn gen_from(&self, err: &Ident) -> Option<TokenStream> {
-        if !cfg!(feature = "profile") && self.profile.is_present() {
-            return None;
-        }
-
         self.fields.fields.iter().find_map(|f| {
             f.from
                 .is_present()

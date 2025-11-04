@@ -1,0 +1,30 @@
+[package]
+name = "leaper-power"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["thiserror"]
+
+[dependencies]
+macros = { path = "../leaper-macros", package = "leaper-macros" }
+mode = { path = "../leaper-mode", package = "leaper-mode" }
+
+directories.workspace = true
+
+iced.workspace = true
+iced_fonts.workspace = true
+iced_layershell.workspace = true
+
+tokio.workspace = true
+
+logind-zbus.workspace = true
+zbus = { workspace = true, features = ["tokio"] }
+
+tracing.workspace = true
+
+thiserror.workspace = true

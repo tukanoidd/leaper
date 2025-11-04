@@ -12,7 +12,6 @@ proc-macro = true
 
 [features]
 default = []
-profile = []
 
 [dependencies]
 darling = "0.21.3"
