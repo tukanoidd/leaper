@@ -3818,6 +3818,7 @@ dependencies = [
  "iced_layershell",
  "leaper-macros",
  "leaper-mode",
+ "leaper-style",
  "logind-zbus",
  "thiserror 2.0.17",
  "tokio",

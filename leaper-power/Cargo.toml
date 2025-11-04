@@ -13,6 +13,7 @@ ignored = ["thiserror"]
 [dependencies]
 macros = { path = "../leaper-macros", package = "leaper-macros" }
 mode = { path = "../leaper-mode", package = "leaper-mode" }
+style = { path = "../leaper-style", package = "leaper-style" }
 
 directories.workspace = true
 

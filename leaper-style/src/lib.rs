@@ -49,3 +49,13 @@ pub fn list_button(
 
     style
 }
+
+pub fn grid_button(
+    theme: &LeaperModeTheme,
+    status: widget::button::Status,
+) -> widget::button::Style {
+    let mut style = widget::button::primary(theme, status);
+    style.border = style.border.rounded(25.0);
+
+    style
+}

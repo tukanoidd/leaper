@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use directories::ProjectDirs;
 use iced::{
-    Event,
+    Event, Font,
     alignment::Horizontal,
     keyboard::{self, Key, key},
     widget::{button, center, column, row, text},
@@ -187,9 +187,18 @@ impl LeaperMode for LeaperPower {
             Self::Msg::IcedEvent(event) => {
                 if let Event::Keyboard(event) = event
                     && let keyboard::Event::KeyPressed { key, .. } = event
-                    && let Key::Named(key::Named::Escape) | Key::Character("q" | "Q") = key.as_ref()
                 {
-                    return Self::Task::done(Self::Msg::Exit);
+                    match key.as_ref() {
+                        Key::Named(key::Named::Escape) | Key::Character("q" | "Q") => {
+                            return Self::Task::done(Self::Msg::Exit);
+                        }
+                        Key::Character("L" | "l") => return Self::Task::done(Self::Msg::Lock),
+                        Key::Character("O" | "o") => return Self::Task::done(Self::Msg::LogOut),
+                        Key::Character("H" | "h") => return Self::Task::done(Self::Msg::Hibernate),
+                        Key::Character("R" | "r") => return Self::Task::done(Self::Msg::Reboot),
+                        Key::Character("S" | "s") => return Self::Task::done(Self::Msg::Shutdown),
+                        _ => (),
+                    }
                 }
             }
 
@@ -206,29 +215,41 @@ impl LeaperMode for LeaperPower {
     }
 
     fn view(&self) -> Self::Element<'_> {
-        let power_btn = |icon: Nerd, str: &'static str, msg: Self::Msg| {
+        let power_btn = |icon: Nerd, str: &'static str, shortcut: &'static str, msg: Self::Msg| {
             button(center(
                 column![
                     text(icon_to_string(icon)).font(NERD_FONT).size(80),
-                    text(str).size(30)
+                    text(str)
+                        .font(Font {
+                            weight: iced::font::Weight::Semibold,
+                            ..Default::default()
+                        })
+                        .size(30),
+                    text(format!("[{shortcut}]"))
+                        .font(Font {
+                            weight: iced::font::Weight::Semibold,
+                            ..Default::default()
+                        })
+                        .size(20.0)
                 ]
                 .align_x(Horizontal::Center)
-                .spacing(10),
+                .spacing(5),
             ))
             .width(200)
             .height(200)
+            .style(style::grid_button)
             .on_press(msg)
         };
 
         center(
             row![
-                power_btn(Nerd::AccountLock, "Lock", Self::Msg::Lock),
-                power_btn(Nerd::Logout, "Log Out", Self::Msg::LogOut),
-                power_btn(Nerd::Snowflake, "Hibernate", Self::Msg::Hibernate),
-                power_btn(Nerd::RotateLeft, "Reboot", Self::Msg::Reboot),
-                power_btn(Nerd::Power, "Shutdown", Self::Msg::Shutdown)
+                power_btn(Nerd::AccountLock, "Lock", "L", Self::Msg::Lock),
+                power_btn(Nerd::Logout, "Log Out", "O", Self::Msg::LogOut),
+                power_btn(Nerd::Snowflake, "Hibernate", "H", Self::Msg::Hibernate),
+                power_btn(Nerd::RotateLeft, "Reboot", "R", Self::Msg::Reboot),
+                power_btn(Nerd::Power, "Shutdown", "S", Self::Msg::Shutdown)
             ]
-            .spacing(20),
+            .spacing(40.0),
         )
         .into()
     }
