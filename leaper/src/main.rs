@@ -106,10 +106,7 @@ fn init_tracing(trace: bool, debug: bool, error: bool) -> LeaperResult<()> {
         .join(",");
 
     #[cfg(not(feature = "profile"))]
-    let layer = tracing_subscriber::fmt::layer().pretty().with_span_events(
-        tracing_subscriber::fmt::format::FmtSpan::CLOSE
-            | tracing_subscriber::fmt::format::FmtSpan::NEW,
-    );
+    let layer = tracing_subscriber::fmt::layer().pretty();
 
     #[cfg(feature = "profile")]
     let layer = tracing_tracy::TracyLayer::default();
