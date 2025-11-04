@@ -9,9 +9,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     flake-utils.url = "github:numtide/flake-utils";
+
+    tracy = {
+      url = "github:tukanoidd/tracy.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = {
+  outputs = inputs @ {
     self,
     nixpkgs,
     crane,
@@ -44,7 +49,12 @@
           src = craneLib.cleanCargoSource ./.;
           strictDeps = true;
 
-          buildInputs = libs;
+          nativeBuildInputs = with pkgs; [
+            rustPlatform.bindgenHook
+          ];
+
+          buildInputs =
+            libs;
           passthru.runtimeLibsPath = libsPath;
         };
 
@@ -56,11 +66,25 @@
             postFixup = ''
               patchelf $out/bin/leaper --add-rpath ${libsPath}
             '';
+
+            NIX_OUTPATH_USED_AS_RANDOM_SEED = "__leaper__";
           }
         );
       in {
         checks = {
           inherit leaper;
+
+          leaper-clippy = craneLib.cargoClippy (commonArgs
+            // {
+              cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+            });
+          leaper-fmt = craneLib.cargoFmt (commonArgs
+            // {
+              cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+            });
+          # Later...
+          # leaper-doc = craneLib.cargoDoc commonArgs;
+          # leaper-nextest = craneLib.cargoNextest commonArgs;
         };
 
         packages = {
@@ -78,16 +102,28 @@
           inputsFrom = [leaper];
 
           packages = with pkgs; [
+            # Workspace Management
             cargo-edit
-            cargo-expand
-            cargo-machete
-            cargo-audit
-            cargo-bloat
             cargo-features-manager
+
+            # Audit
+            cargo-audit
+
+            # Misc
             cargo-modules
+            cargo-expand
+
+            # Clean up unused stuff
+            cargo-machete
+            cargo-udeps
+            cargo-bloat
 
             surrealdb
+
+            inputs.tracy.packages.${system}.default
           ];
+
+          hardeningDisable = ["fortify"];
 
           shellHook = ''
             export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${libsPath}";

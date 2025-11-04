@@ -1,0 +1,13 @@
+[package]
+name = "leaper-style"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+mode = { path = "../leaper-mode", package = "leaper-mode" }
+
+iced.workspace = true

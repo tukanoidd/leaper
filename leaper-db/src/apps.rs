@@ -5,14 +5,13 @@ use serde::{Deserialize, Serialize};
 use surrealdb::RecordId;
 use surrealdb_extras::{SurrealQuery, SurrealTable};
 
-use crate::app::mode::apps::search::{AppsError, AppsResult};
+use crate::{DBError, DBResult};
 
 #[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = app,
     sql(
         "DEFINE TABLE has_icon TYPE RELATION",
-        
         "DEFINE INDEX app_dep_ind ON TABLE app COLUMNS desktop_entry_path UNIQUE",
         "DEFINE INDEX app_name_ind ON TABLE app COLUMNS name UNIQUE",
         "
@@ -39,10 +38,10 @@ pub struct AppEntry {
     pub icon_name: Option<String>,
 }
 
-#[derive(SurrealQuery)]
+#[derive(Debug, SurrealQuery)]
 #[query(
     output = "Option<RecordId>",
-    error = AppsError,
+    error = DBError,
     sql = "
         BEGIN TRANSACTION;
 
@@ -64,53 +63,48 @@ pub struct CreateAppEntryQuery {
     path: PathBuf,
     name: String,
     exec: Vec<String>,
-    icon_name: Option<String>
+    icon_name: Option<String>,
 }
 
 impl CreateAppEntryQuery {
-    pub fn new(path: impl AsRef<Path>) -> AppsResult<Self> {
+    pub fn new(path: impl AsRef<Path>) -> DBResult<Self> {
         let path = path.as_ref();
         let entry = DesktopEntry::from_path::<&str>(path, None)?;
         let name = entry
             .full_name::<&str>(&[])
-            .ok_or_else(|| AppsError::DesktopEntryNoName(path.to_path_buf()))
+            .ok_or_else(|| DBError::DesktopEntryNoName(path.to_path_buf()))
             .map(|s| s.trim().to_string())
             .unwrap_or_else(|_| "Unknown".into());
 
-        let exec = entry.exec().map(|exec_str| {
-            match exec_str.split(" ").skip(1).any(|x| x.contains("%")) {
-                true => {
-                      entry.parse_exec().map_err(AppsError::from).or_else(|_| {
+        let exec = entry
+            .exec()
+            .map(
+                |exec_str| match exec_str.split(" ").skip(1).any(|x| x.contains("%")) {
+                    true => entry.parse_exec().map_err(DBError::from).or_else(|_| {
                         entry
                             .parse_exec_with_uris::<&str>(&[], &[])
-                            .map_err(AppsError::from)
+                            .map_err(DBError::from)
                             .or_else(|_| {
                                 entry
                                     .exec()
-                                    .ok_or_else(|| AppsError::DesktopEntryNoExec(path.into()))
+                                    .ok_or_else(|| DBError::DesktopEntryNoExec(path.into()))
                                     .and_then(|exec_str| {
                                         shlex::split(exec_str).ok_or_else(|| {
-                                            AppsError::DesktopEntryParseExec(
+                                            DBError::DesktopEntryParseExec(
                                                 path.to_path_buf(),
                                                 exec_str.into(),
                                             )
                                         })
                                     })
                             })
-                    })      
-                }
-                false => {
-                    shlex::split(exec_str).ok_or_else(|| {
-                        AppsError::DesktopEntryParseExec(
-                            path.to_path_buf(),
-                            exec_str.into(),
-                        )
-                    })
-                }
-            }
-        })
+                    }),
+                    false => shlex::split(exec_str).ok_or_else(|| {
+                        DBError::DesktopEntryParseExec(path.to_path_buf(), exec_str.into())
+                    }),
+                },
+            )
             .transpose()?
-            .ok_or_else(|| AppsError::DesktopEntryNoExec(path.into()))?;
+            .ok_or_else(|| DBError::DesktopEntryNoExec(path.into()))?;
 
         let icon_name = entry.icon().map(|icon_name| icon_name.to_string());
 
@@ -123,7 +117,6 @@ impl CreateAppEntryQuery {
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppWithIcon {
     pub id: RecordId,
@@ -134,10 +127,10 @@ pub struct AppWithIcon {
     pub icon: Option<AppIcon>,
 }
 
-#[derive(SurrealQuery)]
+#[derive(Debug, SurrealQuery)]
 #[query(
     output = "Vec<AppWithIcon>",
-    error = AppsError,
+    error = DBError,
     sql = "
         SELECT *, ->has_icon->icon.*[0][0] as icon FROM app
             ORDER BY name ASC
@@ -145,10 +138,10 @@ pub struct AppWithIcon {
 )]
 pub struct GetAppWithIconsQuery;
 
-#[derive(SurrealQuery)]
+#[derive(Debug, SurrealQuery)]
 #[query(
     stream = "AppWithIcon",
-    error = AppsError,
+    error = DBError,
     sql = "LIVE SELECT
         *,
         (SELECT * FROM ->has_icon->icon
@@ -157,10 +150,10 @@ pub struct GetAppWithIconsQuery;
 )]
 pub struct GetLiveAppWithIconsQuery;
 
-#[derive(SurrealQuery)]
+#[derive(Debug, SurrealQuery)]
 #[query(
     stream = "AppWithIcon",
-    error = AppsError,
+    error = DBError,
     sql = "
         LIVE SELECT VALUE object::from_entries(array::concat(
             object::entries(in.*),
@@ -194,11 +187,23 @@ pub struct AppIcon {
     pub path: PathBuf,
     pub svg: bool,
     pub xpm: bool,
-    pub dims: Option<AppIconDims>
+    pub dims: Option<AppIconDims>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppIconDims {
     pub width: usize,
-    pub height: usize
+    pub height: usize,
 }
+
+#[derive(Debug, SurrealQuery)]
+#[query(
+    stream = "PathBuf",
+    error = DBError,
+    sql = "
+        LIVE SELECT VALUE in.path
+            FROM is_file
+            WHERE out.ext == 'desktop';
+    "
+)]
+pub struct LiveSearchAppsQuery;

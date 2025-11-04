@@ -1,7 +1,6 @@
 name: "Cachix Build"
 on:
   pull_request:
-  push:
   release:
 jobs:
   nix_build_and_test:

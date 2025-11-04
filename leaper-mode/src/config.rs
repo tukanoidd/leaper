@@ -1,22 +1,24 @@
-use std::io::Write;
+use std::{io::Write, sync::Arc};
 
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 
-use crate::{LeaperResult, app::AppTheme};
+use macros::lerror;
+
+use crate::LeaperModeTheme;
 
 #[derive(SmartDefault, Serialize, Deserialize)]
 #[serde(default)]
-pub struct Config {
+pub struct LeaperModeConfig {
     #[serde(serialize_with = "ser_theme", deserialize_with = "de_theme")]
-    #[default(AppTheme::TokyoNight)]
-    pub theme: AppTheme,
+    #[default(LeaperModeTheme::TokyoNight)]
+    pub theme: LeaperModeTheme,
     pub power: PowerConfig,
 }
 
-impl Config {
-    pub fn open(dirs: &ProjectDirs) -> LeaperResult<Self> {
+impl LeaperModeConfig {
+    pub fn open(dirs: &ProjectDirs) -> LeaperModeConfigResult<Self> {
         let config_dir = dirs.config_local_dir();
 
         if !config_dir.exists() {
@@ -61,7 +63,7 @@ macro_rules! serde_theme {
             serializer.serialize_str(&str)
         }
 
-        fn de_theme<'de, D>(deserializer: D) -> Result<$crate::app::AppTheme, D::Error>
+        fn de_theme<'de, D>(deserializer: D) -> Result<$crate::LeaperModeTheme, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
@@ -71,7 +73,7 @@ macro_rules! serde_theme {
         struct ThemeVisitor;
 
         impl serde::de::Visitor<'_> for ThemeVisitor {
-            type Value = $crate::app::AppTheme;
+            type Value = $crate::LeaperModeTheme;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 write!(formatter, "A string name of the theme")
@@ -101,7 +103,7 @@ macro_rules! serde_theme {
     }
 }
 
-serde_theme!(AppTheme => [
+serde_theme!(LeaperModeTheme => [
     Light,
     Dark,
     Dracula,
@@ -147,4 +149,15 @@ pub enum ActionMethod {
     #[default]
     Dbus,
     Cmd(Vec<String>),
+}
+
+#[lerror]
+#[lerr(prefix = "[leaper_mode::config]", result_name = LeaperModeConfigResult)]
+pub enum LeaperAppModeConfigError {
+    #[lerr(str = "[std::io] {0}")]
+    IO(#[lerr(from, wrap = Arc)] std::io::Error),
+    #[lerr(str = "[toml::de] {0}")]
+    TomlDeser(#[lerr(from)] toml::de::Error),
+    #[lerr(str = "[toml::ser] {0}")]
+    TomlSer(#[lerr(from)] toml::ser::Error),
 }

@@ -1,0 +1,48 @@
+[package]
+name = "leaper-launcher"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["thiserror"]
+
+[features]
+default = []
+db-websocket = ["db/websocket"]
+
+[dependencies]
+macros = { path = "../leaper-macros", package = "leaper-macros" }
+mode = { path = "../leaper-mode", package = "leaper-mode" }
+style = { path = "../leaper-style", package = "leaper-style" }
+executor = { path = "../leaper-executor", package = "leaper-executor" }
+db = { path = "../leaper-db", package = "leaper-db" }
+
+iced = { workspace = true, features = ["tokio", "image", "svg", "advanced"] }
+iced_layershell.workspace = true
+iced_aw = { workspace = true, default-features = false, features = ["spinner"] }
+iced_fonts.workspace = true
+
+nucleo.workspace = true
+
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-mpmc.workspace = true
+futures.workspace = true
+dashmap.workspace = true
+
+image.workspace = true
+ez-pixmap.workspace = true
+
+directories.workspace = true
+
+derive_more = { workspace = true, features = ["debug"] }
+bon.workspace = true
+itertools.workspace = true
+
+tracing.workspace = true
+
+thiserror.workspace = true

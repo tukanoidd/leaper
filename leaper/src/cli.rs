@@ -18,7 +18,7 @@ pub struct Cli {
 #[derive(Default, Clone, Copy, ValueEnum)]
 pub enum AppMode {
     #[default]
-    Apps,
+    Launcher,
     Runner,
     Power,
 }
