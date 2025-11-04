@@ -73,6 +73,18 @@
       in {
         checks = {
           inherit leaper;
+
+          leaper-clippy = craneLib.cargoClippy (commonArgs
+            // {
+              cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+            });
+          leaper-fmt = craneLib.cargoFmt (commonArgs
+            // {
+              cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+            });
+          # Later...
+          # leaper-doc = craneLib.cargoDoc commonArgs;
+          # leaper-nextest = craneLib.cargoNextest commonArgs;
         };
 
         packages = {

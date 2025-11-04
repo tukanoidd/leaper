@@ -12,7 +12,6 @@ use crate::{DBError, DBResult};
     db = app,
     sql(
         "DEFINE TABLE has_icon TYPE RELATION",
-        
         "DEFINE INDEX app_dep_ind ON TABLE app COLUMNS desktop_entry_path UNIQUE",
         "DEFINE INDEX app_name_ind ON TABLE app COLUMNS name UNIQUE",
         "
@@ -64,7 +63,7 @@ pub struct CreateAppEntryQuery {
     path: PathBuf,
     name: String,
     exec: Vec<String>,
-    icon_name: Option<String>
+    icon_name: Option<String>,
 }
 
 impl CreateAppEntryQuery {
@@ -77,10 +76,11 @@ impl CreateAppEntryQuery {
             .map(|s| s.trim().to_string())
             .unwrap_or_else(|_| "Unknown".into());
 
-        let exec = entry.exec().map(|exec_str| {
-            match exec_str.split(" ").skip(1).any(|x| x.contains("%")) {
-                true => {
-                      entry.parse_exec().map_err(DBError::from).or_else(|_| {
+        let exec = entry
+            .exec()
+            .map(
+                |exec_str| match exec_str.split(" ").skip(1).any(|x| x.contains("%")) {
+                    true => entry.parse_exec().map_err(DBError::from).or_else(|_| {
                         entry
                             .parse_exec_with_uris::<&str>(&[], &[])
                             .map_err(DBError::from)
@@ -97,18 +97,12 @@ impl CreateAppEntryQuery {
                                         })
                                     })
                             })
-                    })      
-                }
-                false => {
-                    shlex::split(exec_str).ok_or_else(|| {
-                        DBError::DesktopEntryParseExec(
-                            path.to_path_buf(),
-                            exec_str.into(),
-                        )
-                    })
-                }
-            }
-        })
+                    }),
+                    false => shlex::split(exec_str).ok_or_else(|| {
+                        DBError::DesktopEntryParseExec(path.to_path_buf(), exec_str.into())
+                    }),
+                },
+            )
             .transpose()?
             .ok_or_else(|| DBError::DesktopEntryNoExec(path.into()))?;
 
@@ -122,7 +116,6 @@ impl CreateAppEntryQuery {
         })
     }
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppWithIcon {
@@ -194,13 +187,13 @@ pub struct AppIcon {
     pub path: PathBuf,
     pub svg: bool,
     pub xpm: bool,
-    pub dims: Option<AppIconDims>
+    pub dims: Option<AppIconDims>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppIconDims {
     pub width: usize,
-    pub height: usize
+    pub height: usize,
 }
 
 #[derive(Debug, SurrealQuery)]
