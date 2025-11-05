@@ -2,10 +2,7 @@ pub mod apps;
 pub mod fs;
 pub mod queries;
 
-use std::{path::PathBuf, sync::Arc};
-
-#[cfg(not(feature = "websocket"))]
-use directories::ProjectDirs;
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use macros::lerror;
 use surrealdb::{
@@ -19,27 +16,38 @@ use crate::{
     fs::{Directory, FSNode, File, Symlink},
 };
 
-#[cfg(not(feature = "websocket"))]
-pub type Db = surrealdb::engine::local::Db;
-#[cfg(not(feature = "websocket"))]
-pub type Scheme = surrealdb::engine::local::RocksDb;
-
-#[cfg(feature = "websocket")]
 pub type Db = surrealdb::engine::remote::ws::Client;
-#[cfg(feature = "websocket")]
-pub type Scheme = surrealdb::engine::remove::ws::Ws;
+pub type Scheme = surrealdb::engine::remote::ws::Ws;
 
 pub type DB = Surreal<Db>;
 pub type DBNotification<T> = surrealdb::Notification<T>;
 pub type DBAction = surrealdb::value::Action;
 
-pub async fn init_db(#[cfg(not(feature = "websocket"))] project_dirs: ProjectDirs) -> DBResult<DB> {
-    #[cfg(feature = "websocket")]
-    let endpoint = "localhost:8000";
+pub async fn init_db(port: u16) -> DBResult<DB> {
+    let endpoint: String = format!("localhost:{port}");
 
-    #[cfg(not(feature = "websocket"))]
-    let endpoint = project_dirs.data_local_dir().join("db");
+    const MAX_TRIES: usize = 1000;
+    let mut tries = 0;
 
+    loop {
+        match connect(endpoint.clone()).await {
+            Ok(db) => return Ok(db),
+            Err(err) => match tries < MAX_TRIES {
+                true => {
+                    tracing::warn!(
+                        "[{tries}/{MAX_TRIES}] Failed to connect to surrealdb: {err}\nRetrying..."
+                    );
+                    tries += 1;
+                }
+                false => return Err(err),
+            },
+        }
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+async fn connect(endpoint: String) -> DBResult<DB> {
     let db = DB::new::<Scheme>((
         endpoint,
         Config::default()
@@ -94,9 +102,6 @@ where
 pub enum DBError {
     #[lerr(str = "[std::io] {0}")]
     IO(#[lerr(from, wrap = Arc)] std::io::Error),
-
-    #[lerr(str = "[vfs] {0}")]
-    VFS(#[lerr(from, wrap = Arc)] vfs::VfsError),
 
     #[lerr(str = "[tokio::task::join] {0}")]
     Join(#[lerr(from, wrap = Arc)] tokio::task::JoinError),

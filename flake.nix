@@ -51,26 +51,29 @@
           buildInputs = with pkgs; [
             rustPlatform.bindgenHook
           ];
+
+          LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
         };
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
-        fileSetForCrate = crate:
-          lib.fileset.toSource {
-            root = ./.;
-            fileset = lib.fileset.unions [
-              ./Cargo.toml
-              ./Cargo.lock
-              (craneLib.fileset.commonCargoSources ./leaper-macros)
-              (craneLib.fileset.commonCargoSources ./leaper-db)
-              (craneLib.fileset.commonCargoSources ./leaper-mode)
-              (craneLib.fileset.commonCargoSources ./leaper-launcher)
-              (craneLib.fileset.commonCargoSources ./leaper-power)
-              (craneLib.fileset.commonCargoSources ./leaper-runner)
-              (craneLib.fileset.commonCargoSources ./leaper-executor)
-              (craneLib.fileset.commonCargoSources ./leaper-style)
-              (craneLib.fileset.commonCargoSources crate)
-            ];
-          };
+        fileSet = lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [
+            ./Cargo.toml
+            ./Cargo.lock
+            (craneLib.fileset.commonCargoSources ./leaper-macros)
+            (craneLib.fileset.commonCargoSources ./leaper-db)
+            (craneLib.fileset.commonCargoSources ./leaper-mode)
+            (craneLib.fileset.commonCargoSources ./leaper-launcher)
+            (craneLib.fileset.commonCargoSources ./leaper-power)
+            (craneLib.fileset.commonCargoSources ./leaper-runner)
+            (craneLib.fileset.commonCargoSources ./leaper-executor)
+            (craneLib.fileset.commonCargoSources ./leaper-style)
+            (craneLib.fileset.commonCargoSources ./leaper-tracing)
+            (craneLib.fileset.commonCargoSources ./leaper)
+            (craneLib.fileset.commonCargoSources ./leaper-daemon)
+          ];
+        };
 
         individualCrateArgs =
           commonArgs
@@ -97,7 +100,7 @@
           // {
             pname = "leaper";
             cargoExtraArgs = "-p leaper";
-            src = fileSetForCrate ./leaper;
+            src = fileSet;
 
             buildInputs =
               libs;
@@ -114,7 +117,7 @@
           // {
             pname = "leaper-daemon";
             cargoExtraArgs = "-p leaper-daemon";
-            src = fileSetForCrate ./leaper-daemon;
+            src = fileSet;
           });
       in {
         checks = {
@@ -162,17 +165,15 @@
         packages = {
           inherit leaper;
           inherit leaper-daemon;
-          default = leaper;
         };
 
-        apps = rec {
+        apps = {
           leaper = flake-utils.lib.mkApp {
             drv = leaper;
           };
           leaper-daemon = flake-utils.lib.mkApp {
             drv = leaper-daemon;
           };
-          default = leaper;
         };
 
         devShells.default = craneLib.devShell {
@@ -211,6 +212,66 @@
       }
     ))
     // {
+      nixosModules = {
+        default = {
+          config,
+          pkgs,
+          lib,
+          ...
+        }: let
+          leaper-program = config.programs.leaper;
+        in
+          with lib; {
+            options = {
+              programs.leaper = {
+                enable = mkEnableOption "leaper";
+                db = types.submodule {
+                  host = mkOption {
+                    description = "SurrealDB host";
+                    example = "127.0.0.1";
+                    default = "127.0.0.1";
+                    type = types.string;
+                  };
+                  port = mkOption {
+                    description = "SurrealDB instance port";
+                    example = 8000;
+                    default = 8000;
+                    type = types.ints.port;
+                  };
+                  path = mkOption {
+                    description = "SurrealDB path";
+                    example = "memory";
+                    default = "surrealkv:///var/lib/surrealdb";
+                    type = types.string;
+                  };
+                  extraFlags = mkOption {
+                    description = "SurrealDB extra flags to pass";
+                    example = [
+                      "--allow-all"
+                      "--user"
+                      "root"
+                      "--pass"
+                      "root"
+                    ];
+                    default = ["--unauthenticated"];
+                    type = types.listOf types.string;
+                  };
+                };
+              };
+            };
+
+            config = mkIf leaper-program.enable {
+              services.surrealdb = {
+                enable = true;
+                host = leaper-program.db.host;
+                port = leaper-program.db.port;
+                dbPath = leaper-program.db.path;
+                extraFlags = leaper-program.db.extraFlags;
+              };
+              systemd.services.surrealdb.serviceConfig.ProcSubset = lib.mkForce "all";
+            };
+          };
+      };
       homeModules = {
         default = {
           config,
@@ -229,13 +290,29 @@
                   example = false;
                   type = types.package;
                 };
+                daemon-package = mkOption {
+                  description = "Package for Leaper Daemon";
+                  example = false;
+                  type = types.package;
+                };
+              };
+              systemd.user.services.leaper-daemon = {
+                enable = true;
+                after = ["surrealdb.service"];
+                wantedBy = ["default.target"];
+                description = "Leaper Daemon";
+                serviceConfig = {
+                  Type = "simple";
+                  ExecStart = "${leaper-program.daemon-package}/bin/leaper-daemon";
+                  Restart = "on-failure";
+                };
               };
             };
             config = {
               home = {
                 packages = (
                   if leaper-program.enable
-                  then [leaper-program.package]
+                  then [leaper-program.package leaper-program.daemon-package]
                   else []
                 );
               };

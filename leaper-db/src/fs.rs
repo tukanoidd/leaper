@@ -1,135 +1,10 @@
 use std::path::PathBuf;
 
-use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use surrealdb::RecordId;
 use surrealdb_extras::{SurrealQuery, SurrealTable};
-use tracing::Instrument;
-use vfs::async_vfs::{AsyncPhysicalFS, AsyncVfsPath};
 
 use crate::{DB, DBError, DBResult, InstrumentedDBQuery, queries::RelateQuery};
-
-#[macro_export]
-macro_rules! check_stop {
-    ([$error:ty] $stop_recv:expr) => {
-        match $stop_recv.is_empty() {
-            true => {}
-            false => match $stop_recv.recv().await {
-                Ok(_) => return Err(<$error>::InterruptedByParent),
-                Err(err) => match err {
-                    tokio_mpmc::ChannelError::ChannelClosed => {
-                        return Err(<$error>::LostConnectionToParent)
-                    }
-                    _ => unreachable!(),
-                },
-            },
-        }
-    };
-    (@opt [$error:ty] $stop_recv:expr) => {
-        match $stop_recv.is_empty() {
-            true => {}
-            false => match $stop_recv.recv().await {
-                Ok(_) => return None,
-                Err(err) => match err {
-                    tokio_mpmc::ChannelError::ChannelClosed => return None,
-                    _ => unreachable!(),
-                },
-            },
-        }
-    };
-}
-
-#[bon::builder]
-#[tracing::instrument(
-    skip(db, pre_filter, stop_receiver),
-    level = "debug",
-    name = "fs::index"
-)]
-pub async fn index(
-    #[builder(into)] root: PathBuf,
-    #[builder(into)] kind: String,
-    db: DB,
-    #[builder(default)] parents: bool,
-    pre_filter: impl Fn(&PathBuf) -> Option<bool> + Clone + Send + Sync + 'static,
-    mut stop_receiver: Option<tokio_mpmc::Receiver<()>>,
-) -> DBResult<()> {
-    if let Some(stop_receiver) = &mut stop_receiver {
-        check_stop!([DBError] stop_receiver);
-    }
-
-    let mut walkdir = AsyncVfsPath::new(AsyncPhysicalFS::new(&root))
-        .walk_dir()
-        .instrument(tracing::debug_span!(
-            "fs::index::walkdir::init",
-            kind = kind
-        ))
-        .await?
-        .filter_map(|path| {
-            let stop_receiver = stop_receiver.clone();
-            let pre_filter = pre_filter.clone();
-            let db = db.clone();
-            let root = root.clone();
-
-            async move {
-                if let Some(stop_receiver) = stop_receiver {
-                    check_stop!(@opt [FSError] stop_receiver);
-                }
-
-                let path = match path {
-                    Ok(path) => path,
-                    Err(err) => {
-                        tracing::error!("{err}");
-                        return None;
-                    }
-                };
-
-                let path_real = root.join(path.as_str().trim_start_matches('/'));
-
-                if let Some(res) = pre_filter.clone()(&path_real)
-                    && !res
-                {
-                    return None;
-                }
-
-                if let Err(err) = FSNode::add_db()
-                    .path(&path_real)
-                    .db(db)
-                    .parents(parents)
-                    .call()
-                    .await
-                {
-                    tracing::error!("Failed to add fs_node: {err}");
-                }
-
-                Some(())
-            }
-            .instrument(tracing::debug_span!(
-                "fs::index::walkdir::filter_map",
-                kind = kind
-            ))
-        })
-        .boxed();
-
-    if let Some(stop_receiver) = stop_receiver.clone() {
-        check_stop!([DBError] stop_receiver);
-    }
-
-    while walkdir
-        .next()
-        .instrument(tracing::debug_span!(
-            "fs::index::walkdir::next",
-            kind = kind
-        ))
-        .await
-        .is_some()
-    {
-        if let Some(stop_receiver) = stop_receiver.clone() {
-            check_stop!([DBError] stop_receiver);
-        }
-    }
-
-    Ok(())
-}
 
 #[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
 #[table(
@@ -151,7 +26,11 @@ pub struct FSNode {
 impl FSNode {
     #[builder]
     #[tracing::instrument(skip(db), level = "debug", name = "fs::FSNode::add_db")]
-    async fn add_db(#[builder(into)] path: PathBuf, db: DB, parents: bool) -> DBResult<RecordId> {
+    pub async fn add_db(
+        #[builder(into)] path: PathBuf,
+        db: DB,
+        parents: bool,
+    ) -> DBResult<RecordId> {
         if let Some(id) = FindNodeByPathQuery::builder()
             .path(&path)
             .build()

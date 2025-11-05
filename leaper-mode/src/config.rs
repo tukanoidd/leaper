@@ -15,6 +15,8 @@ pub struct LeaperModeConfig {
     #[default(LeaperModeTheme::TokyoNight)]
     pub theme: LeaperModeTheme,
     pub power: PowerConfig,
+    #[default = 8000]
+    pub db_port: u16,
 }
 
 impl LeaperModeConfig {

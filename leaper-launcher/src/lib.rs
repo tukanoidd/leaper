@@ -1,5 +1,3 @@
-mod search;
-
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -30,6 +28,7 @@ use iced_layershell::{
 use itertools::Itertools;
 use tokio_stream::StreamExt;
 
+use daemon::LeaperDaemonClient;
 use db::{
     DB, DBAction, DBResult, InstrumentedDBQuery,
     apps::{AppWithIcon, GetAppWithIconsQuery, GetLiveAppIconUpdates, GetLiveAppWithIconsQuery},
@@ -42,17 +41,15 @@ use mode::{
     config::{LeaperAppModeConfigError, LeaperModeConfig},
 };
 
-use crate::search::AppsFinder;
-
 type AppsIcons = Vec<AppWithIcon>;
 
 type InitAppsIconsResult = DBResult<AppsIcons>;
-type LoadAppsIconsResult = LeaperLauncherResult<()>;
 
 #[derive(Default)]
 pub struct LeaperLauncher {
     config: LeaperModeConfig,
     db: Option<DB>,
+    daemon: Option<LeaperDaemonClient>,
 
     apps: AppsIcons,
     filtered: AppsIcons,
@@ -62,8 +59,6 @@ pub struct LeaperLauncher {
     selected: usize,
 
     xpm_handles: Arc<Mutex<DashMap<PathBuf, image::Handle>>>,
-
-    pub stop_search_sender: Option<tokio_mpmc::Sender<()>>,
 }
 
 impl LeaperMode for LeaperLauncher {
@@ -125,27 +120,31 @@ impl LeaperMode for LeaperLauncher {
         Ok(())
     }
 
-    fn init(project_dirs: ProjectDirs, config: LeaperModeConfig) -> (Self, Self::Task)
+    fn init(_project_dirs: ProjectDirs, config: LeaperModeConfig) -> (Self, Self::Task)
     where
         Self: Sized,
     {
-        #[cfg(feature = "db-websocket")]
-        let _project_dirs = project_dirs;
-
+        let db_port = config.db_port;
         let launcher = Self {
             config,
             ..Default::default()
         };
         let task = {
-            let init_db_task = Self::Task::perform(
-                init_db(
-                    #[cfg(not(feature = "db-websocket"))]
-                    project_dirs,
-                ),
-                Self::Msg::InitDB,
-            );
+            let init_db_task = Self::Task::perform(init_db(db_port), Self::Msg::InitDB);
+            let init_daemon_task =
+                Self::Task::perform(daemon::client::connect(), |res| match res {
+                    Ok(daemon) => Self::Msg::InitDaemon(daemon),
+                    Err(err) => {
+                        tracing::warn!("Failed to initialized daemon client: {err}");
+                        Self::Msg::Ignore
+                    }
+                });
 
-            Self::Task::batch([text_input::focus(Self::SEARCH_ID), init_db_task])
+            Self::Task::batch([
+                text_input::focus(Self::SEARCH_ID),
+                init_db_task,
+                init_daemon_task,
+            ])
         };
 
         (launcher, task)
@@ -162,25 +161,11 @@ impl LeaperMode for LeaperLauncher {
 
     fn update(&mut self, msg: Self::Msg) -> Self::Task {
         match msg {
-            Self::Msg::Exit {
-                mut app_search_stop_sender,
-            } => {
-                let stop_task = app_search_stop_sender.take().map(|sender| {
-                    Self::Task::perform(
-                        async move {
-                            sender.send(()).await?;
-
-                            Ok(())
-                        },
-                        Self::Msg::Result,
-                    )
-                });
-
-                return match stop_task {
-                    Some(stop_task) => Self::Task::batch([stop_task, iced::exit()]),
-                    None => iced::exit(),
-                };
+            Self::Msg::Exit => {
+                return iced::exit();
             }
+            Self::Msg::Ignore => {}
+
             Self::Msg::InitDB(db) => match db {
                 Ok(db) => {
                     self.db = Some(db.clone());
@@ -188,16 +173,12 @@ impl LeaperMode for LeaperLauncher {
                 }
                 Err(err) => {
                     tracing::error!("Failed to initialize the database: {err}");
-                    return Self::Task::done(Self::Msg::Exit {
-                        app_search_stop_sender: self.stop_search_sender.clone(),
-                    });
+                    return Self::Task::done(Self::Msg::Exit);
                 }
             },
+            Self::Msg::InitDaemon(daemon) => self.daemon = Some(daemon),
+
             Self::Msg::InitApps => {
-                let (apps_finder, sender) = AppsFinder::new();
-
-                self.stop_search_sender = Some(sender);
-
                 return Self::Task::batch([
                     Self::Task::perform(
                         GetAppWithIconsQuery
@@ -205,7 +186,7 @@ impl LeaperMode for LeaperLauncher {
                         Self::Msg::InitedApps,
                     )
                     .map(Into::into),
-                    Self::Task::done(Self::Msg::LoadApps(apps_finder)),
+                    Self::Task::done(Self::Msg::LoadApps),
                 ]);
             }
             Self::Msg::InitedApps(apps) => match apps {
@@ -220,31 +201,27 @@ impl LeaperMode for LeaperLauncher {
                 Err(err) => {
                     tracing::error!("Failed to initialize app list from cache: {err}");
 
-                    return Self::Task::done(Self::Msg::Exit {
-                        app_search_stop_sender: self.stop_search_sender.clone(),
-                    });
+                    return Self::Task::done(Self::Msg::Exit);
                 }
             },
 
-            Self::Msg::LoadApps(apps_finder) => {
-                return Self::Task::perform(
-                    apps_finder.search(self.db.clone().expect("db is available")),
-                    Self::Msg::LoadedApps,
-                )
-                .map(Into::into);
+            Self::Msg::LoadApps => {
+                if let Some(daemon) = self.daemon.clone() {
+                    let ctx = daemon::client::context::current();
+
+                    return Self::Task::perform(
+                        async move { daemon.search_apps(ctx).await },
+                        |res| {
+                            if let Err(err) = res {
+                                tracing::warn!("Failed to search for apps: {err}");
+                            }
+
+                            Self::Msg::Ignore
+                        },
+                    )
+                    .map(Into::into);
+                }
             }
-            Self::Msg::LoadedApps(apps) => match apps {
-                Ok(_) => {
-                    tracing::trace!("AppsFinder succeded!");
-                }
-                Err(err) => {
-                    tracing::error!("AppsFinder errored out: {err}");
-
-                    return Self::Task::done(Self::Msg::Exit {
-                        app_search_stop_sender: self.stop_search_sender.clone(),
-                    });
-                }
-            },
 
             Self::Msg::AddApp(app_with_icon) => {
                 let existing_ind = self
@@ -371,9 +348,7 @@ impl LeaperMode for LeaperLauncher {
                         tracing::error!("Failed to run the app {}: {err}", app.name)
                     }
 
-                    return Self::Task::done(Self::Msg::Exit {
-                        app_search_stop_sender: self.stop_search_sender.clone(),
-                    });
+                    return Self::Task::done(Self::Msg::Exit);
                 }
                 None => tracing::warn!("Logic error!"),
             },
@@ -399,9 +374,7 @@ impl LeaperMode for LeaperLauncher {
                 {
                     match key.as_ref() {
                         Key::Named(key::Named::Escape) | Key::Character("q" | "Q") => {
-                            return Self::Task::done(Self::Msg::Exit {
-                                app_search_stop_sender: self.stop_search_sender.clone(),
-                            });
+                            return Self::Task::done(Self::Msg::Exit);
                         }
 
                         Key::Named(key::Named::ArrowUp) => {
@@ -443,7 +416,6 @@ impl LeaperMode for LeaperLauncher {
         match &self.db {
             Some(db) => {
                 let db = db.clone();
-                let stop_sender = self.stop_search_sender.clone();
 
                 Self::Subscription::batch([
                     iced_events,
@@ -465,12 +437,7 @@ impl LeaperMode for LeaperLauncher {
                                 Err(err) => {
                                     tracing::error!("{err}");
 
-                                    if let Err(err) = msg_sender
-                                        .send(Self::Msg::Exit {
-                                            app_search_stop_sender: stop_sender,
-                                        })
-                                        .await
-                                    {
+                                    if let Err(err) = msg_sender.send(Self::Msg::Exit).await {
                                         tracing::error!(
                                             "Failed to send exit message from live app table subscription: {err}"
                                         );
@@ -488,12 +455,7 @@ impl LeaperMode for LeaperLauncher {
                                             "Failed to get notification from apps live table: {err}"
                                         );
 
-                                        if let Err(err) = msg_sender
-                                            .send(Self::Msg::Exit {
-                                                app_search_stop_sender: stop_sender.clone(),
-                                            })
-                                            .await
-                                        {
+                                        if let Err(err) = msg_sender.send(Self::Msg::Exit).await {
                                             tracing::error!(
                                                 "Failed to send exit message from live app table subscription: {err}"
                                             );
@@ -513,11 +475,7 @@ impl LeaperMode for LeaperLauncher {
                                                 "Failed to send add app from live app table subscription: {err}"
                                             );
 
-                                            if let Err(err) = msg_sender
-                                                .send(Self::Msg::Exit {
-                                                    app_search_stop_sender: stop_sender.clone(),
-                                                })
-                                                .await
+                                            if let Err(err) = msg_sender.send(Self::Msg::Exit).await
                                             {
                                                 tracing::error!(
                                                     "Failed to send exit message from live app table subscription: {err}"
@@ -727,17 +685,15 @@ impl LeaperLauncher {
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum LeaperLauncherMsg {
-    Exit {
-        #[debug(skip)]
-        app_search_stop_sender: Option<tokio_mpmc::Sender<()>>,
-    },
+    Exit,
+    Ignore,
 
     InitDB(DBResult<DB>),
+    InitDaemon(LeaperDaemonClient),
 
     InitApps,
     InitedApps(InitAppsIconsResult),
-    LoadApps(AppsFinder),
-    LoadedApps(LoadAppsIconsResult),
+    LoadApps,
 
     AddApp(AppWithIcon),
 
