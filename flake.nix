@@ -3,12 +3,19 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+
     crane.url = "github:ipetkov/crane";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
     flake-utils.url = "github:numtide/flake-utils";
+
+    advisory-db = {
+      url = "github:rustsec/advisory-db";
+      flake = false;
+    };
 
     tracy = {
       url = "github:tukanoidd/tracy.nix";
@@ -22,6 +29,7 @@
     crane,
     rust-overlay,
     flake-utils,
+    advisory-db,
     ...
   }:
     (flake-utils.lib.eachDefaultSystem (
@@ -31,7 +39,46 @@
           overlays = [(import rust-overlay)];
         };
 
+        inherit (pkgs) lib;
+
         craneLib = (crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml);
+        src = craneLib.cleanCargoSource ./.;
+
+        commonArgs = {
+          src = craneLib.cleanCargoSource ./.;
+          strictDeps = true;
+
+          buildInputs = with pkgs; [
+            rustPlatform.bindgenHook
+          ];
+        };
+        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+        fileSetForCrate = crate:
+          lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./Cargo.toml
+              ./Cargo.lock
+              (craneLib.fileset.commonCargoSources ./leaper-macros)
+              (craneLib.fileset.commonCargoSources ./leaper-db)
+              (craneLib.fileset.commonCargoSources ./leaper-mode)
+              (craneLib.fileset.commonCargoSources ./leaper-launcher)
+              (craneLib.fileset.commonCargoSources ./leaper-power)
+              (craneLib.fileset.commonCargoSources ./leaper-runner)
+              (craneLib.fileset.commonCargoSources ./leaper-executor)
+              (craneLib.fileset.commonCargoSources ./leaper-style)
+              (craneLib.fileset.commonCargoSources crate)
+            ];
+          };
+
+        individualCrateArgs =
+          commonArgs
+          // {
+            inherit cargoArtifacts;
+            inherit (craneLib.crateNameFromCargoToml {inherit src;}) version;
+            # doCheck = false;
+          };
 
         libs = with pkgs;
         with xorg; [
@@ -45,23 +92,16 @@
         ];
         libsPath = pkgs.lib.makeLibraryPath libs;
 
-        commonArgs = {
-          src = craneLib.cleanCargoSource ./.;
-          strictDeps = true;
-
-          nativeBuildInputs = with pkgs; [
-            rustPlatform.bindgenHook
-          ];
-
-          buildInputs =
-            libs;
-          passthru.runtimeLibsPath = libsPath;
-        };
-
         leaper = craneLib.buildPackage (
-          commonArgs
+          individualCrateArgs
           // {
-            cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+            pname = "leaper";
+            cargoExtraArgs = "-p leaper";
+            src = fileSetForCrate ./leaper;
+
+            buildInputs =
+              libs;
+            passthru.runtimeLibsPath = libsPath;
 
             postFixup = ''
               patchelf $out/bin/leaper --add-rpath ${libsPath}
@@ -70,36 +110,75 @@
             NIX_OUTPATH_USED_AS_RANDOM_SEED = "__leaper__";
           }
         );
+        leaper-daemon = craneLib.buildPackage (individualCrateArgs
+          // {
+            pname = "leaper-daemon";
+            cargoExtraArgs = "-p leaper-daemon";
+            src = fileSetForCrate ./leaper-daemon;
+          });
       in {
         checks = {
           inherit leaper;
+          inherit leaper-daemon;
 
           leaper-clippy = craneLib.cargoClippy (commonArgs
             // {
-              cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+              inherit cargoArtifacts;
+              cargoClippyExtraArgs = "--all-targets -- --deny warnings";
             });
           leaper-fmt = craneLib.cargoFmt (commonArgs
             // {
               cargoArtifacts = craneLib.buildDepsOnly commonArgs;
             });
+          leaper-toml-fmt = craneLib.taploFmt {
+            src = pkgs.lib.sources.sourceFilesBySuffices src [".toml"];
+          };
+          leaper-audit = craneLib.cargoAudit {
+            inherit src advisory-db;
+          };
+          leaper-deny = craneLib.cargoDeny {
+            inherit src;
+          };
+
           # Later...
-          # leaper-doc = craneLib.cargoDoc commonArgs;
-          # leaper-nextest = craneLib.cargoNextest commonArgs;
+          # leaper-doc = craneLib.cargoDoc (
+          #   commonArgs
+          #   // {
+          #     inherit cargoArtifacts;
+          #     env.RUSTDOCFLAGS = "--deny warnings";
+          #   }
+          # );
+          # leaper-nextest = craneLib.cargoNextest (
+          #   commonArgs
+          #   // {
+          #     inherit cargoArtifacts;
+          #     partitions = 1;
+          #     partitionType = "count";
+          #     cargoNextestPartitionsExtraArgs = "--no-tests=pass";
+          #   }
+          # );
         };
 
         packages = {
           inherit leaper;
+          inherit leaper-daemon;
           default = leaper;
         };
 
-        apps.default = flake-utils.lib.mkApp {
-          drv = leaper;
+        apps = rec {
+          leaper = flake-utils.lib.mkApp {
+            drv = leaper;
+          };
+          leaper-daemon = flake-utils.lib.mkApp {
+            drv = leaper-daemon;
+          };
+          default = leaper;
         };
 
         devShells.default = craneLib.devShell {
           checks = self.checks.${system};
 
-          inputsFrom = [leaper];
+          inputsFrom = [leaper leaper-daemon];
 
           packages = with pkgs; [
             # Workspace Management

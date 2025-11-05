@@ -1,0 +1,20 @@
+[package]
+name = "leaper-daemon"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+db = { path = "../leaper-db", package = "leaper-db" }
+
+tarpc.workspace = true
+
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }
+futures.workspace = true
+
+directories.workspace = true
+
+color-eyre.workspace = true
