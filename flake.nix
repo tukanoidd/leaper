@@ -233,7 +233,7 @@
                       description = "SurrealDB host";
                       example = "127.0.0.1";
                       default = "127.0.0.1";
-                      type = types.string;
+                      type = types.str;
                     };
                     port = mkOption {
                       description = "SurrealDB instance port";
