@@ -236,7 +236,7 @@
                     description = "SurrealDB instance port";
                     example = 8000;
                     default = 8000;
-                    type = types.ints.port;
+                    type = types.port;
                   };
                   path = mkOption {
                     description = "SurrealDB path";
