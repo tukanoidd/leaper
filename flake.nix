@@ -225,6 +225,16 @@
             options = {
               programs.leaper = {
                 enable = mkEnableOption "leaper";
+                package = mkOption {
+                  description = "Package for Leaper";
+                  example = false;
+                  type = types.package;
+                };
+                daemon-package = mkOption {
+                  description = "Package for Leaper Daemon";
+                  example = false;
+                  type = types.package;
+                };
                 db = {
                   host = mkOption {
                     description = "SurrealDB host";
@@ -261,6 +271,7 @@
             };
 
             config = mkIf leaper-program.enable {
+              environment.systemPackages = [leaper-program.package leaper-program.daemon-package];
               services.surrealdb = {
                 enable = true;
                 host = leaper-program.db.host;
@@ -281,42 +292,6 @@
                     Restart = "on-failure";
                   };
                 };
-              };
-            };
-          };
-      };
-      homeModules = {
-        default = {
-          config,
-          pkgs,
-          lib,
-          ...
-        }: let
-          leaper-program = config.programs.leaper;
-        in
-          with lib; {
-            options = {
-              programs.leaper = {
-                enable = mkEnableOption "leaper";
-                package = mkOption {
-                  description = "Package for Leaper";
-                  example = false;
-                  type = types.package;
-                };
-                daemon-package = mkOption {
-                  description = "Package for Leaper Daemon";
-                  example = false;
-                  type = types.package;
-                };
-              };
-            };
-            config = {
-              home = {
-                packages = (
-                  if leaper-program.enable
-                  then [leaper-program.package leaper-program.daemon-package]
-                  else []
-                );
               };
             };
           };
