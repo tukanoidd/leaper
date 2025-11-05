@@ -284,7 +284,7 @@
                 user.services.leaper-daemon = {
                   enable = true;
                   after = ["surrealdb.service"];
-                  wantedBy = ["default.target"];
+                  wantedBy = ["graphical-session.target"];
                   description = "Leaper Daemon";
                   serviceConfig = {
                     Type = "simple";
