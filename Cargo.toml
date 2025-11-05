@@ -10,7 +10,8 @@ members = [
   "leaper-mode",
   "leaper-power",
   "leaper-runner",
-  "leaper-style", "leaper-tracing",
+  "leaper-style",
+  "leaper-tracing",
 ]
 
 [workspace.metadata.crane]
