@@ -245,7 +245,7 @@
                       description = "SurrealDB path";
                       example = "memory";
                       default = "surrealkv:///var/lib/surrealdb";
-                      type = types.string;
+                      type = types.str;
                     };
                     extraFlags = mkOption {
                       description = "SurrealDB extra flags to pass";
@@ -257,7 +257,7 @@
                         "root"
                       ];
                       default = ["--unauthenticated"];
-                      type = types.listOf types.string;
+                      type = types.listOf types.str;
                     };
                   };
                 };
