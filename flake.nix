@@ -271,7 +271,20 @@
                 dbPath = leaper-program.db.path;
                 extraFlags = leaper-program.db.extraFlags;
               };
-              systemd.services.surrealdb.serviceConfig.ProcSubset = lib.mkForce "all";
+              systemd = {
+                services.surrealdb.serviceConfig.ProcSubset = lib.mkForce "all";
+                user.services.leaper-daemon = {
+                  enable = true;
+                  after = ["surrealdb.service"];
+                  wantedBy = ["default.target"];
+                  description = "Leaper Daemon";
+                  serviceConfig = {
+                    Type = "simple";
+                    ExecStart = "${leaper-program.daemon-package}/bin/leaper-daemon";
+                    Restart = "on-failure";
+                  };
+                };
+              };
             };
           };
       };
@@ -297,17 +310,6 @@
                   description = "Package for Leaper Daemon";
                   example = false;
                   type = types.package;
-                };
-              };
-              systemd.user.services.leaper-daemon = {
-                enable = true;
-                after = ["surrealdb.service"];
-                wantedBy = ["default.target"];
-                description = "Leaper Daemon";
-                serviceConfig = {
-                  Type = "simple";
-                  ExecStart = "${leaper-program.daemon-package}/bin/leaper-daemon";
-                  Restart = "on-failure";
                 };
               };
             };
