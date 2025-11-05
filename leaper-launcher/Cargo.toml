@@ -10,16 +10,13 @@ homepage.workspace = true
 [package.metadata.cargo-machete]
 ignored = ["thiserror"]
 
-[features]
-default = []
-db-websocket = ["db/websocket"]
-
 [dependencies]
 macros = { path = "../leaper-macros", package = "leaper-macros" }
 mode = { path = "../leaper-mode", package = "leaper-mode" }
 style = { path = "../leaper-style", package = "leaper-style" }
 executor = { path = "../leaper-executor", package = "leaper-executor" }
 db = { path = "../leaper-db", package = "leaper-db" }
+daemon = { path = "../leaper-daemon", package = "leaper-daemon" }
 
 iced = { workspace = true, features = ["tokio", "image", "svg", "advanced"] }
 iced_layershell.workspace = true

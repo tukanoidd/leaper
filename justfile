@@ -1,5 +1,8 @@
-run_ws *args:
-    cargo run -p leaper --features db-websocket -- {{args}}
+run *args:
+    cargo run -p leaper -- {{args}}
+
+daemon:
+    cargo run -p leaper-daemon
 
 db:
     surreal start --unauthenticated

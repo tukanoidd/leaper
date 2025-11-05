@@ -1,8 +1,8 @@
 [package]
-name = "leaper"
+name = "leaper-daemon"
 version.workspace = true
-authors.workspace = true
 edition.workspace = true
+authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
@@ -13,14 +13,21 @@ default = []
 profile = ["leaper-tracing/profile"]
 
 [dependencies]
+db = { path = "../leaper-db", package = "leaper-db" }
 mode = { path = "../leaper-mode", package = "leaper-mode" }
-launcher = { path = "../leaper-launcher", package = "leaper-launcher" }
-power = { path = "../leaper-power", package = "leaper-power" }
-runner = { path = "../leaper-runner", package = "leaper-runner" }
 leaper-tracing.path = "../leaper-tracing"
+
+tarpc.workspace = true
+
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }
+futures.workspace = true
+
+vfs.workspace = true
+
+directories.workspace = true
+
+itertools.workspace = true
 
 tracing.workspace = true
 
 color-eyre.workspace = true
-
-clap = { version = "4.5.51", features = ["derive"] }
