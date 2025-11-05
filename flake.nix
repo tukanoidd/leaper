@@ -139,11 +139,11 @@
           leaper-audit = craneLib.cargoAudit {
             inherit src advisory-db;
           };
-          leaper-deny = craneLib.cargoDeny {
-            inherit src;
-          };
 
           # Later...
+          # leaper-deny = craneLib.cargoDeny {
+          #   inherit src;
+          # };
           # leaper-doc = craneLib.cargoDoc (
           #   commonArgs
           #   // {
