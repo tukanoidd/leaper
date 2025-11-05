@@ -227,6 +227,7 @@
                 enable = mkEnableOption "leaper";
                 db = mkOption {
                   description = "SurrealDB configuration";
+                  default = {};
                   type = types.submodule {
                     host = mkOption {
                       description = "SurrealDB host";
