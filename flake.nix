@@ -225,40 +225,36 @@
             options = {
               programs.leaper = {
                 enable = mkEnableOption "leaper";
-                db = mkOption {
-                  description = "SurrealDB configuration";
-                  default = {};
-                  type = types.submodule {
-                    host = mkOption {
-                      description = "SurrealDB host";
-                      example = "127.0.0.1";
-                      default = "127.0.0.1";
-                      type = types.str;
-                    };
-                    port = mkOption {
-                      description = "SurrealDB instance port";
-                      example = 8000;
-                      default = 8000;
-                      type = types.ints.port;
-                    };
-                    path = mkOption {
-                      description = "SurrealDB path";
-                      example = "memory";
-                      default = "surrealkv:///var/lib/surrealdb";
-                      type = types.str;
-                    };
-                    extraFlags = mkOption {
-                      description = "SurrealDB extra flags to pass";
-                      example = [
-                        "--allow-all"
-                        "--user"
-                        "root"
-                        "--pass"
-                        "root"
-                      ];
-                      default = ["--unauthenticated"];
-                      type = types.listOf types.str;
-                    };
+                db = {
+                  host = mkOption {
+                    description = "SurrealDB host";
+                    example = "127.0.0.1";
+                    default = "127.0.0.1";
+                    type = types.str;
+                  };
+                  port = mkOption {
+                    description = "SurrealDB instance port";
+                    example = 8000;
+                    default = 8000;
+                    type = types.ints.port;
+                  };
+                  path = mkOption {
+                    description = "SurrealDB path";
+                    example = "memory";
+                    default = "surrealkv:///var/lib/surrealdb";
+                    type = types.str;
+                  };
+                  extraFlags = mkOption {
+                    description = "SurrealDB extra flags to pass";
+                    example = [
+                      "--allow-all"
+                      "--user"
+                      "root"
+                      "--pass"
+                      "root"
+                    ];
+                    default = ["--unauthenticated"];
+                    type = types.listOf types.str;
                   };
                 };
               };
