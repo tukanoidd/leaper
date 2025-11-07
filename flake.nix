@@ -67,6 +67,7 @@
             (craneLib.fileset.commonCargoSources ./leaper-launcher)
             (craneLib.fileset.commonCargoSources ./leaper-power)
             (craneLib.fileset.commonCargoSources ./leaper-runner)
+            (craneLib.fileset.commonCargoSources ./leaper-lock)
             (craneLib.fileset.commonCargoSources ./leaper-executor)
             (craneLib.fileset.commonCargoSources ./leaper-style)
             (craneLib.fileset.commonCargoSources ./leaper-tracing)
@@ -103,7 +104,10 @@
             src = fileSet;
 
             buildInputs =
-              libs;
+              libs
+              ++ (with pkgs; [
+                linux-pam
+              ]);
             passthru.runtimeLibsPath = libsPath;
 
             postFixup = ''
@@ -293,6 +297,7 @@
                   };
                 };
               };
+              security.pam.services.leaper-lock = {};
             };
           };
       };
