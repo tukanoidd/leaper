@@ -128,13 +128,15 @@ impl LeaperModeMultiWindow for LeaperLock {
                 return Self::Task::done(LeaperLockMsg::UnLock);
             }
 
-            LeaperLockMsg::IcedEvent(ev) => match ev {
-                iced::Event::Keyboard(keyboard::Event::KeyPressed {
+            LeaperLockMsg::IcedEvent(ev) => {
+                if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
                     key: keyboard::Key::Named(keyboard::key::Named::Enter),
                     ..
-                }) => return Self::Task::done(Self::Msg::ConfirmPassword),
-                _ => {}
-            },
+                }) = ev
+                {
+                    return Self::Task::done(Self::Msg::ConfirmPassword);
+                }
+            }
 
             LeaperLockMsg::UnLock => return Self::Task::done(msg),
         }
