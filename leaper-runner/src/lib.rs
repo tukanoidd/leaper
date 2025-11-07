@@ -67,12 +67,16 @@ impl LeaperMode for LeaperRunner {
             .settings(settings)
             .theme(Self::theme)
             .subscription(Self::subscription)
-            .run_with(move || Self::init(project_dirs, config))?;
+            .run_with(move || Self::init(project_dirs, config, ()))?;
 
         Ok(())
     }
 
-    fn init(_project_dirs: ProjectDirs, config: LeaperModeConfig) -> (Self, Self::Task)
+    fn init(
+        _project_dirs: ProjectDirs,
+        config: LeaperModeConfig,
+        _args: Self::InitArgs,
+    ) -> (Self, Self::Task)
     where
         Self: Sized,
     {

@@ -17,6 +17,7 @@ mode = { path = "../leaper-mode", package = "leaper-mode" }
 launcher = { path = "../leaper-launcher", package = "leaper-launcher" }
 power = { path = "../leaper-power", package = "leaper-power" }
 runner = { path = "../leaper-runner", package = "leaper-runner" }
+lock = { path = "../leaper-lock", package = "leaper-lock" }
 leaper-tracing.path = "../leaper-tracing"
 
 tracing.workspace = true

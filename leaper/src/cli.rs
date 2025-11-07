@@ -21,4 +21,5 @@ pub enum AppMode {
     Launcher,
     Runner,
     Power,
+    Lock,
 }

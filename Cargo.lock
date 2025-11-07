@@ -3116,6 +3116,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "iced_sessionlock"
+version = "0.13.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c76924846b3a15533d799b2ea0876ebabd63ecd1580d6a6808065e980c142c7d"
+dependencies = [
+ "futures",
+ "iced",
+ "iced_core",
+ "iced_futures",
+ "iced_graphics",
+ "iced_renderer",
+ "iced_runtime",
+ "iced_sessionlock_macros",
+ "log",
+ "sessionlockev",
+ "thiserror 1.0.69",
+ "tracing",
+ "window_clipboard",
+]
+
+[[package]]
+name = "iced_sessionlock_macros"
+version = "0.13.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6573cd0b318ef1ba1fe9e624a51c8a5d8d4647370baac3e07e6d335b9574889b"
+dependencies = [
+ "darling 0.20.11",
+ "manyhow",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.108",
+]
+
+[[package]]
 name = "iced_tiny_skia"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3660,6 +3694,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "leaper-launcher",
+ "leaper-lock",
  "leaper-mode",
  "leaper-power",
  "leaper-runner",
@@ -3738,6 +3773,24 @@ dependencies = [
  "tokio",
  "tokio-mpmc",
  "tokio-stream",
+ "tracing",
+]
+
+[[package]]
+name = "leaper-lock"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "directories",
+ "iced",
+ "iced_sessionlock",
+ "leaper-macros",
+ "leaper-mode",
+ "leaper-style",
+ "nix 0.30.1",
+ "nonstick",
+ "thiserror 2.0.17",
+ "tokio",
  "tracing",
 ]
 
@@ -3873,6 +3926,35 @@ name = "libm"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
+
+[[package]]
+name = "libpam-sys"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "114545207fdd55a59a967d9d974960007fce62f6f075f2414bea2589091253f6"
+dependencies = [
+ "libc",
+ "libpam-sys-helpers",
+ "libpam-sys-impls",
+]
+
+[[package]]
+name = "libpam-sys-helpers"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8790428ad4abc1112412a63c780337b5cd050fc90d497bdea96e8e2e029323a9"
+dependencies = [
+ "libpam-sys-impls",
+]
+
+[[package]]
+name = "libpam-sys-impls"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa3007a9936a126c31a182569b6e9a6203f0ac79313a42c136a2421685fd81cb"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "libredox"
@@ -4375,6 +4457,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "nonstick"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53b9c180cfd5955c50b64bc2022b418e1392b798cfd3173605fb70ab22e9e4ea"
+dependencies = [
+ "bitflags 2.10.0",
+ "libc",
+ "libpam-sys",
+ "libpam-sys-helpers",
+ "libpam-sys-impls",
 ]
 
 [[package]]
@@ -6257,6 +6352,28 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.108",
+]
+
+[[package]]
+name = "sessionlockev"
+version = "0.13.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ac4497b1f067db77f046a1a4b3fe29a7c2cdfbbf604122b00685183e963f2c1"
+dependencies = [
+ "bitflags 2.10.0",
+ "calloop 0.14.3",
+ "calloop-wayland-source 0.4.1",
+ "log",
+ "raw-window-handle",
+ "tempfile",
+ "thiserror 1.0.69",
+ "waycrate_xkbkeycode",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-cursor",
+ "wayland-protocols",
+ "wayland-protocols-misc",
+ "wayland-protocols-wlr",
 ]
 
 [[package]]
