@@ -3,10 +3,11 @@ use std::{sync::Arc, time::Duration};
 use directories::ProjectDirs;
 use iced::{
     Length,
-    alignment::Horizontal,
+    alignment::{Horizontal, Vertical},
     keyboard,
-    widget::{center, column, container, text, text_input},
+    widget::{center, column, container, row, text, text_input},
 };
+use iced_aw::Spinner;
 use iced_sessionlock::to_session_message;
 
 use macros::lerror;
@@ -21,6 +22,8 @@ pub struct LeaperLock {
 
     user_name: String,
     password: String,
+
+    auth_in_progress: bool,
 }
 
 impl LeaperModeMultiWindow for LeaperLock {
@@ -57,6 +60,8 @@ impl LeaperModeMultiWindow for LeaperLock {
 
             user_name,
             password: String::new(),
+
+            auth_in_progress: false,
         };
         let task = Self::Task::none();
 
@@ -85,14 +90,27 @@ impl LeaperModeMultiWindow for LeaperLock {
 
                     style
                 }),
-                text_input("Enter you password...", &self.password)
-                    .width(600.0)
-                    .size(20)
-                    .padding(10.0)
-                    .on_input(LeaperLockMsg::EnterPassword)
-                    .on_submit(LeaperLockMsg::ConfirmPassword)
-                    .secure(true)
-                    .style(style::text_input),
+                row![
+                    text_input("Enter you password...", &self.password)
+                        .width(Length::Fill)
+                        .size(20)
+                        .padding(10.0)
+                        .on_input_maybe(
+                            (!self.auth_in_progress).then_some(LeaperLockMsg::EnterPassword)
+                        )
+                        .on_submit_maybe(
+                            (!self.auth_in_progress).then_some(LeaperLockMsg::ConfirmPassword)
+                        )
+                        .secure(true)
+                        .style(style::text_input),
+                ]
+                .push_maybe(
+                    self.auth_in_progress
+                        .then(|| Spinner::new().width(20).height(20))
+                )
+                .width(600.0)
+                .spacing(15)
+                .align_y(Vertical::Center),
             ]
             .align_x(Horizontal::Center)
             .spacing(50),
@@ -103,36 +121,46 @@ impl LeaperModeMultiWindow for LeaperLock {
     fn update(&mut self, msg: Self::Msg) -> Self::Task {
         match msg {
             LeaperLockMsg::SecondTick => {}
+            LeaperLockMsg::FailedLock(err) => {
+                self.auth_in_progress = false;
+                tracing::error!("{err}");
+            }
 
             LeaperLockMsg::EnterPassword(new_pass) => self.password = new_pass,
             LeaperLockMsg::ConfirmPassword => {
-                if let Err(err) = (|| {
-                    let mut auth = nonstick::TransactionBuilder::new_with_service("leaper-lock")
-                        .username(&self.user_name)
-                        .build(
-                            LeaperAuthAdapter {
-                                user_name: self.user_name.clone(),
-                                password: self.password.clone(),
-                            }
-                            .into_conversation(),
-                        )?;
+                let auth_adapter = LeaperAuthAdapter {
+                    user_name: self.user_name.clone(),
+                    password: self.password.clone(),
+                };
+                let user_name = self.user_name.clone();
 
-                    auth.authenticate(AuthnFlags::empty())?;
-                    auth.account_management(AuthnFlags::empty())?;
+                self.auth_in_progress = true;
 
-                    LeaperLockResult::Ok(())
-                })() {
-                    tracing::error!("{err}");
-                }
+                return Self::Task::perform(
+                    async move {
+                        let mut auth =
+                            nonstick::TransactionBuilder::new_with_service("leaper-lock")
+                                .username(user_name)
+                                .build(auth_adapter.into_conversation())?;
 
-                return Self::Task::done(LeaperLockMsg::UnLock);
+                        auth.authenticate(AuthnFlags::empty())?;
+                        auth.account_management(AuthnFlags::empty())?;
+
+                        LeaperLockResult::Ok(())
+                    },
+                    |res| match res {
+                        Ok(_) => LeaperLockMsg::UnLock,
+                        Err(err) => LeaperLockMsg::FailedLock(err.to_string()),
+                    },
+                );
             }
 
             LeaperLockMsg::IcedEvent(ev) => {
-                if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                    key: keyboard::Key::Named(keyboard::key::Named::Enter),
-                    ..
-                }) = ev
+                if !self.auth_in_progress
+                    && let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                        key: keyboard::Key::Named(keyboard::key::Named::Enter),
+                        ..
+                    }) = ev
                 {
                     return Self::Task::done(Self::Msg::ConfirmPassword);
                 }
@@ -206,6 +234,7 @@ impl nonstick::ConversationAdapter for LeaperAuthAdapter {
 #[derive(Debug, Clone)]
 pub enum LeaperLockMsg {
     SecondTick,
+    FailedLock(String),
 
     EnterPassword(String),
     ConfirmPassword,
