@@ -2,6 +2,7 @@ name: "Cachix Build"
 on:
   pull_request:
   release:
+  workflow_dispatch:
 jobs:
   nix_build_and_test:
     runs-on: ubuntu-latest
