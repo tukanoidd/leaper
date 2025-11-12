@@ -3784,6 +3784,7 @@ dependencies = [
  "directories",
  "iced",
  "iced_aw",
+ "iced_fonts 0.2.1",
  "iced_sessionlock",
  "leaper-macros",
  "leaper-mode",

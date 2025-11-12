@@ -18,6 +18,7 @@ style = { path = "../leaper-style", package = "leaper-style" }
 iced.workspace = true
 iced_sessionlock.workspace = true
 iced_aw = { workspace = true, default-features = false, features = ["spinner"] }
+iced_fonts.workspace = true
 
 tokio.workspace = true
 

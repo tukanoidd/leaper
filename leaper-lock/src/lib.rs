@@ -5,9 +5,10 @@ use iced::{
     Length,
     alignment::{Horizontal, Vertical},
     keyboard,
-    widget::{center, column, container, row, text, text_input},
+    widget::{button, center, column, container, row, text, text_input},
 };
 use iced_aw::Spinner;
+use iced_fonts::{NERD_FONT, NERD_FONT_BYTES, Nerd, REQUIRED_FONT_BYTES, nerd::icon_to_string};
 use iced_sessionlock::to_session_message;
 
 use macros::lerror;
@@ -42,6 +43,8 @@ impl LeaperModeMultiWindow for LeaperLock {
         iced_sessionlock::build_pattern::application(Self::update, Self::view)
             .subscription(Self::subscription)
             .theme(Self::theme)
+            .font(REQUIRED_FONT_BYTES)
+            .font(NERD_FONT_BYTES)
             .run_with(|| Self::init(project_dirs, config, user.name))?;
 
         Ok(())
@@ -103,6 +106,19 @@ impl LeaperModeMultiWindow for LeaperLock {
                         )
                         .secure(true)
                         .style(style::text_input),
+                    button(
+                        text(icon_to_string(Nerd::TriangleRight))
+                            .font(NERD_FONT)
+                            .size(25.0)
+                            .align_x(Horizontal::Center)
+                            .align_y(Vertical::Center)
+                    )
+                    .width(40.0)
+                    .height(40.0)
+                    .style(style::grid_button)
+                    .on_press_maybe(
+                        (!self.auth_in_progress).then_some(LeaperLockMsg::ConfirmPassword)
+                    )
                 ]
                 .push_maybe(
                     self.auth_in_progress
