@@ -18,8 +18,9 @@ nix.settings = {
 1. App Launcher (default mode) (custom solution, good enough for me (but planning to improve things as i go))
 2. Command Runner (parse with [shlex](https://docs.rs/shlex/), run with [std::process:Command](https://doc.rust-lang.org/std/process/struct.Command.html))
 3. Power Menu (integrated code from [waypwr](https://github.com/tukanoidd/waypwr))
-4. (Planned) File Finder
-5. Maybe more
+4. Screen Locker
+5. (Planned) File Finder
+6. Maybe more
 
 ## Why
 Tried many, while the alternatives are good, they're either too bloated, have
