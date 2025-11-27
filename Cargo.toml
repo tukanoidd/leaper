@@ -28,11 +28,11 @@ iced_fonts = { version = "0.2.1", features = ["nerd"] }
 nonstick = "0.1.1"
 nix = "0.30.1"
 
-image = "0.25.8"
+image = "0.25.9"
 ez-pixmap = "0.2.2"
 
-surrealdb = { version = "2.3.10", default-features = false }
-surrealdb-core = "2.3.10"
+surrealdb = { version = "2.4.0", default-features = false }
+surrealdb-core = "2.4.0"
 surrealdb-extras = { git = "https://github.com/tukanoidd/surrealdb-extras.git", rev = "83d604846df83d6772562bbe7eadf97a37d02cbc" }
 
 vfs = { version = "0.12.2", features = ["async-vfs"] }

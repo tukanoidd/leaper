@@ -45,7 +45,7 @@
         src = craneLib.cleanCargoSource ./.;
 
         commonArgs = {
-          src = craneLib.cleanCargoSource ./.;
+          inherit src;
           strictDeps = true;
 
           buildInputs = with pkgs; [
