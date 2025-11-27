@@ -132,8 +132,8 @@ pub struct AppWithIcon {
     output = "Vec<AppWithIcon>",
     error = DBError,
     sql = "
-        SELECT *, ->has_icon->icon.*[0][0] as icon FROM app
-            ORDER BY name ASC
+        SELECT *, array::at(->has_icon->icon, 0) as icon FROM app
+            ORDER BY name ASC FETCH icon
     "
 )]
 pub struct GetAppWithIconsQuery;

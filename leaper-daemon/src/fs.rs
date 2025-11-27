@@ -31,7 +31,13 @@ pub async fn index(
                 let path = match path {
                     Ok(path) => path,
                     Err(err) => {
-                        tracing::error!("{err}");
+                        match err.kind() {
+                            vfs::error::VfsErrorKind::FileNotFound => {}
+                            _ => {
+                                tracing::error!("[{:?}] {err}", err.kind());
+                            }
+                        }
+
                         return None;
                     }
                 };
