@@ -260,7 +260,7 @@
                   path = mkOption {
                     description = "SurrealDB path";
                     example = "memory";
-                    default = "rocksdb:///var/lib/surrealdb";
+                    default = "rocksdb:/var/lib/surrealdb";
                     type = types.str;
                   };
                   extraFlags = mkOption {
