@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
         .map(|channel| {
             let server = LeaperDaemonServer;
 
-            tracing::debug!("Serving daemon server...");
+            tracing::info!("Serving daemon server...");
 
             channel.execute(server.serve()).for_each(|x| async {
                 tokio::spawn(x);
@@ -195,15 +195,15 @@ impl LeaperDaemon for LeaperDaemonServer {
                 .into_iter()
                 .collect::<Result<Vec<_>>>();
 
-            tracing::debug!("Done searching for apps and icons!");
+            tracing::info!("Done searching for apps and icons!");
             SEARCHING_FOR_APPS_ICONS.store(false, SeqCst);
         });
 
-        tracing::debug!("Waiting on rest of apps and icons in a detached task...");
+        tracing::info!("Waiting on rest of apps and icons in a detached task...");
     }
 
     async fn index(self, _context: ::tarpc::context::Context, root: PathBuf, parents: bool) {
-        tracing::debug!("Indexing {root:?}");
+        tracing::info!("Indexing {root:?}");
 
         fs::index(root, parents, |_| None).await
     }
