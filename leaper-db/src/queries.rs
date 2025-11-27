@@ -1,4 +1,4 @@
-use surrealdb::RecordId;
+use surrealdb::types::RecordId;
 use surrealdb_extras::SurrealQuery;
 
 use crate::DBError;
@@ -13,7 +13,7 @@ pub struct RelateQuery {
     #[builder(into)]
     in_: RecordId,
     #[builder(into)]
-    table: surrealdb::sql::Table,
+    table: surrealdb::types::Table,
     #[builder(into)]
     out: RecordId,
 }

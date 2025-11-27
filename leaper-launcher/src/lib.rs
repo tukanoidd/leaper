@@ -595,9 +595,10 @@ impl LeaperLauncher {
                 false => match icon.xpm {
                     true => {
                         let xpm_handles = xpm_handles.lock().expect("Should be fine");
+                        let icon_path = PathBuf::from(&icon.path);
 
-                        let handle = match xpm_handles.contains_key(&icon.path) {
-                            true => xpm_handles.get(&icon.path),
+                        let handle = match xpm_handles.contains_key(&icon_path) {
+                            true => xpm_handles.get(&icon_path),
                             false => {
                                 let img = std::fs::read_to_string(&icon.path).ok().and_then(|s| {
                                     let start = s.find('"').unwrap_or_default();
@@ -631,10 +632,10 @@ impl LeaperLauncher {
                                 });
 
                                 if let Some(handle) = img_handle {
-                                    xpm_handles.insert(icon.path.clone(), handle);
+                                    xpm_handles.insert(icon_path.clone(), handle);
                                 }
 
-                                xpm_handles.get(&icon.path)
+                                xpm_handles.get(&icon_path)
                             }
                         };
 

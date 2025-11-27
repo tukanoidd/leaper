@@ -21,7 +21,7 @@ pub type Scheme = surrealdb::engine::remote::ws::Ws;
 
 pub type DB = Surreal<Db>;
 pub type DBNotification<T> = surrealdb::Notification<T>;
-pub type DBAction = surrealdb::value::Action;
+pub type DBAction = surrealdb::types::Action;
 
 pub async fn init_db(port: u16) -> DBResult<DB> {
     let endpoint: String = format!("localhost:{port}");
@@ -51,8 +51,7 @@ async fn connect(endpoint: String) -> DBResult<DB> {
     let db = DB::new::<Scheme>((
         endpoint,
         Config::default()
-            .capabilities(Capabilities::all().with_all_experimental_features_allowed())
-            .strict(),
+            .capabilities(Capabilities::all().with_all_experimental_features_allowed()),
     ))
     .await?;
     db.use_ns_db_checked(
@@ -108,6 +107,8 @@ pub enum DBError {
 
     #[lerr(str = "[surrealdb] {0}")]
     Surreal(#[lerr(from, wrap = Arc)] surrealdb::Error),
+    #[lerr(str = "[surrealdb_core::rpc] {0}")]
+    SurrealRPCResponse(#[lerr(from)] surrealdb_core::rpc::DbResultError),
     #[lerr(str = "[surrealdb_extras] {0}")]
     SurrealExtra(String),
 

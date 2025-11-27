@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use surrealdb::RecordId;
+use surrealdb::types::{RecordId, SurrealValue};
 use surrealdb_extras::{SurrealQuery, SurrealTable};
+use surrealdb_types::ToSql;
 
 use crate::{DB, DBError, DBResult, InstrumentedDBQuery, queries::RelateQuery};
 
-#[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
+#[derive(Debug, Clone, SurrealValue, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = fs_node,
     sql(
@@ -18,7 +19,7 @@ use crate::{DB, DBError, DBResult, InstrumentedDBQuery, queries::RelateQuery};
 )]
 pub struct FSNode {
     pub id: RecordId,
-    pub path: PathBuf,
+    pub path: String,
     pub name: String,
 }
 
@@ -32,7 +33,7 @@ impl FSNode {
         parents: bool,
     ) -> DBResult<RecordId> {
         if let Some(id) = FindNodeByPathQuery::builder()
-            .path(&path)
+            .path(path.to_string_lossy().to_string())
             .build()
             .instrumented_execute(db.clone())
             .await?
@@ -104,7 +105,7 @@ impl FSNode {
 )]
 struct FindNodeByPathQuery {
     #[builder(into)]
-    pub path: PathBuf,
+    pub path: String,
 }
 
 #[derive(Debug, SurrealQuery)]
@@ -114,25 +115,28 @@ struct FindNodeByPathQuery {
     sql = "(CREATE fs_node SET path = {path}, name = {name}).id"
 )]
 struct CreateFsNodeQuery {
-    path: PathBuf,
+    path: String,
     name: String,
 }
 
 #[bon::bon]
 impl CreateFsNodeQuery {
     #[builder]
-    fn new(path: PathBuf) -> Self {
+    fn new(#[builder(into)] path: PathBuf) -> Self {
         let name: String = path
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("[ERROR]")
             .into();
 
-        Self { path, name }
+        Self {
+            path: path.to_string_lossy().into(),
+            name,
+        }
     }
 }
 
-#[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
+#[derive(Debug, Clone, SurrealValue, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = directory,
 )]
@@ -172,7 +176,7 @@ struct CreateDirectoryQuery {
     fs_node: RecordId,
 }
 
-#[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
+#[derive(Debug, Clone, SurrealValue, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = file,
     sql(
@@ -203,7 +207,7 @@ struct CreateDirectoryQuery {
                     |$str| string::contains($str, 'x')
                 )
                     .map(|$str| string::split($str, 'x'))
-                    .filter(|$split| array::len($split) == 2 && array::all($split, |$dim| string::is::numeric($dim)))
+                    .filter(|$split| array::len($split) == 2 && array::all($split, |$dim| string::is_numeric($dim)))
                     .map(|$split| {{
                         width: <int>($split[0]),
                         height: <int>($split[0])
@@ -248,7 +252,9 @@ impl File {
             .build()
             .instrumented_execute(db.clone())
             .await
-            .inspect_err(|err| tracing::error!("File {{ {path:?}->{fs_node_id} }}, {err}"))?;
+            .inspect_err(|err| {
+                tracing::error!("File {{ {path:?}->{} }}, {err}", fs_node_id.to_sql())
+            })?;
 
         Ok(())
     }
@@ -277,7 +283,7 @@ struct CreateFileQuery {
     ext: Option<String>,
 }
 
-#[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
+#[derive(Debug, Clone, SurrealValue, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = symlink,
     sql("DEFINE TABLE is_symlink_of TYPE RELATION")

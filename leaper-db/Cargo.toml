@@ -14,8 +14,9 @@ ignored = ["thiserror"]
 macros = { path = "../leaper-macros", package = "leaper-macros" }
 
 surrealdb = { workspace = true, features = ["allocator", "protocol-ws"] }
+surrealdb-core.workspace = true
+surrealdb-types.workspace = true
 surrealdb-extras.workspace = true
-# surrealdb-extras = { path = "../../surrealdb-extras" }
 
 tokio.workspace = true
 tokio-mpmc.workspace = true

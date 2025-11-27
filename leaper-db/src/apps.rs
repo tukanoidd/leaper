@@ -1,13 +1,13 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use freedesktop_desktop_entry::DesktopEntry;
 use serde::{Deserialize, Serialize};
-use surrealdb::RecordId;
+use surrealdb::types::{RecordId, SurrealValue};
 use surrealdb_extras::{SurrealQuery, SurrealTable};
 
 use crate::{DBError, DBResult};
 
-#[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
+#[derive(Debug, Clone, SurrealValue, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = app,
     sql(
@@ -32,7 +32,7 @@ use crate::{DBError, DBResult};
 )]
 pub struct AppEntry {
     pub id: RecordId,
-    pub desktop_entry_path: PathBuf,
+    pub desktop_entry_path: String,
     pub name: String,
     pub exec: Vec<String>,
     pub icon_name: Option<String>,
@@ -60,7 +60,7 @@ pub struct AppEntry {
     "
 )]
 pub struct CreateAppEntryQuery {
-    path: PathBuf,
+    path: String,
     name: String,
     exec: Vec<String>,
     icon_name: Option<String>,
@@ -109,7 +109,7 @@ impl CreateAppEntryQuery {
         let icon_name = entry.icon().map(|icon_name| icon_name.to_string());
 
         Ok(Self {
-            path: path.into(),
+            path: path.to_string_lossy().into(),
             name,
             exec,
             icon_name,
@@ -117,10 +117,10 @@ impl CreateAppEntryQuery {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, SurrealValue, Serialize, Deserialize)]
 pub struct AppWithIcon {
     pub id: RecordId,
-    pub desktop_entry_path: PathBuf,
+    pub desktop_entry_path: String,
     pub name: String,
     pub exec: Vec<String>,
     #[serde(default)]
@@ -163,7 +163,7 @@ pub struct GetLiveAppWithIconsQuery;
 )]
 pub struct GetLiveAppIconUpdates;
 
-#[derive(Debug, Clone, SurrealTable, Serialize, Deserialize)]
+#[derive(Debug, Clone, SurrealValue, SurrealTable, Serialize, Deserialize)]
 #[table(
     db = icon,
     sql(
@@ -184,13 +184,13 @@ pub struct GetLiveAppIconUpdates;
 )]
 pub struct AppIcon {
     pub name: String,
-    pub path: PathBuf,
+    pub path: String,
     pub svg: bool,
     pub xpm: bool,
     pub dims: Option<AppIconDims>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, SurrealValue, Serialize, Deserialize)]
 pub struct AppIconDims {
     pub width: usize,
     pub height: usize,
@@ -198,7 +198,7 @@ pub struct AppIconDims {
 
 #[derive(Debug, SurrealQuery)]
 #[query(
-    stream = "PathBuf",
+    stream = "String",
     error = DBError,
     sql = "
         LIVE SELECT VALUE in.path

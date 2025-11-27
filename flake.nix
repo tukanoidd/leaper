@@ -17,6 +17,11 @@
       flake = false;
     };
 
+    surrealdb = {
+      url = "github:surrealdb/surrealdb?tag=v3.0.0-alpha.16";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     tracy = {
       url = "github:tukanoidd/tracy.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -202,7 +207,7 @@
             cargo-udeps
             cargo-bloat
 
-            surrealdb
+            inputs.surrealdb.packages.${system}.default
 
             inputs.tracy.packages.${system}.default
           ];
@@ -278,6 +283,7 @@
               environment.systemPackages = [leaper-program.package leaper-program.daemon-package];
               services.surrealdb = {
                 enable = true;
+                package = inputs.surrealdb.packages.${pkgs.system}.default;
                 host = leaper-program.db.host;
                 port = leaper-program.db.port;
                 dbPath = leaper-program.db.path;
