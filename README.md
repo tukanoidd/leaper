@@ -1,4 +1,6 @@
 # Can be used, but not recommended
+There are some problems currently after the surrealdb 3 migration,
+some apps are not being found, need to check
 
 ## Cachix Binary
 ```nix
