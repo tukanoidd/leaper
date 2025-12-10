@@ -142,11 +142,13 @@ pub struct GetAppWithIconsQuery;
 #[query(
     stream = "AppWithIcon",
     error = DBError,
-    sql = "LIVE SELECT
-        *,
-        (SELECT * FROM ->has_icon->icon
-            ORDER BY dims.width,dims.height,svg)[0][0] as icon
-        FROM app"
+    sql = "
+        LIVE SELECT
+            *,
+            array::at((SELECT * FROM ->has_icon->icon
+                ORDER BY dims.width,dims.height,svg), 0) as icon
+        FROM app
+    "
 )]
 pub struct GetLiveAppWithIconsQuery;
 

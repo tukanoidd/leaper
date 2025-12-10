@@ -9,3 +9,7 @@ DELETE ICON
 DELETE FILE
 DELETE icon
 DELETE file
+USE NAMESPACE LEAPER
+USE NAMESPACE leaper
+use namespace leaper
+remove database data

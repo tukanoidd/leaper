@@ -18,7 +18,7 @@
     };
 
     surrealdb = {
-      url = "github:surrealdb/surrealdb?tag=v3.0.0-alpha.16";
+      url = "github:surrealdb/surrealdb?tag=v3.0.0-alpha.17";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

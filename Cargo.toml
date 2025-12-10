@@ -31,9 +31,9 @@ nix = "0.30.1"
 image = "0.25.9"
 ez-pixmap = "0.2.2"
 
-surrealdb = { version = "3.0.0-alpha.16", default-features = false }
-surrealdb-core = "3.0.0-alpha.16"
-surrealdb-types = "3.0.0-alpha.16"
+surrealdb = { version = "3.0.0-alpha.17", default-features = false }
+surrealdb-core = "3.0.0-alpha.17"
+surrealdb-types = "3.0.0-alpha.17"
 surrealdb-extras = { git = "https://github.com/tukanoidd/surrealdb-extras.git", rev = "653bcb4ef3f3d263be8fc4554e81797649fb40be" }
 
 vfs = { version = "0.12.2", features = ["async-vfs"] }
